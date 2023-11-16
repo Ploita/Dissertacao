@@ -82,7 +82,7 @@ def train_dqn(num_episodes: int, random_seeds: 'list[int]') -> 'list[list[int]]'
 
             # Print average reward every 100 episodes
             if episode % 100 == 0:
-                avg_reward = int(np.mean(rewards))  	
+                avg_reward = int(np.mean(reward_over_episodes))  	
                 print("Seed:", random_seeds.index(seed) + 1,"Episode:", episode, "Average Reward:", avg_reward)
             pyglet.app.exit()
             agent.save()
