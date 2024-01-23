@@ -22,7 +22,7 @@ def get_model(
     else:
         # neural network
         # there are hidden layers in this case.
-        dims = [input_dim] + hidden_layers + [output_dim]
+        dims = [input_dim] + list(hidden_layers) + [output_dim]
         modules = []
         for i, dim in enumerate(dims[:-2]):
             modules.append(nn.Linear(dims[i], dims[i + 1]))

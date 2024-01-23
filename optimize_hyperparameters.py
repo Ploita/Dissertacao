@@ -19,7 +19,7 @@ def sample_hyper_parameters(
     force_linear_model: bool = False,
 ) -> Dict:
 
-    learning_rate = trial.suggest_loguniform("learning_rate", 1e-5, 1e-2)
+    learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
     discount_factor = trial.suggest_categorical("discount_factor", [0.9, 0.95, 0.99])
     batch_size = trial.suggest_categorical("batch_size", [16, 32, 64, 128])
     memory_size = trial.suggest_categorical("memory_size", [int(1e4), int(5e4), int(1e5)])
@@ -45,7 +45,12 @@ def sample_hyper_parameters(
     else:
         # neural network hidden layers
         # nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [[256, 256]]) # ;-)
-        nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [None, [16, 16], [16, 32], [16, 64], [16, 128], [16, 256], [32, 32], [32, 64], [32, 128], [32, 256], [64, 64], [64, 128], [64, 256], [128, 128], [128, 256], [256, 256]])
+        #nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [None, [[16, 16]], [[16, 32]], [[16, 64]], [[16, 128]], [[16, 256]], [[32, 32]], [[32, 64]], [[32, 128]], [[32, 256]], [[64, 64]], [[64, 128]], [[64, 256]], [[128, 128]], [128, 256], [256, 256]])
+        # [None, (16, 16), (16, 32), (16, 64), (16, 128), (16, 256), (32, 32), (32, 64), (32, 128), (32, 256), (64, 64), (64, 128), (64, 256), (128, 128), (128, 256), (256, 256)]
+        nn_hidden_layers_choices = [None, (64,64), (256,256)]
+        nn_hidden_layers_index = trial.suggest_int("nn_hidden_layers_index", 0, len(nn_hidden_layers_choices) - 1)
+        nn_hidden_layers = nn_hidden_layers_choices[nn_hidden_layers_index]
+
 
     # how large do we let the gradients grow before capping them?
     # Explosive gradients can be an issue and this hyper-parameters helps mitigate it.
@@ -55,10 +60,12 @@ def sample_hyper_parameters(
     normalize_state = trial.suggest_categorical('normalize_state', [True, False])
 
     # start value for the exploration rate
-    epsilon_start = trial.suggest_categorical("epsilon_start", [0.8, 0.9, 1.0])
+    epsilon_start = trial.suggest_categorical("epsilon_start", [0.9])
+
 
     # final value for the exploration rate
-    epsilon_end = trial.suggest_uniform("epsilon_end", 0, 0.3)
+    epsilon_end = trial.suggest_float("epsilon_end", 0, 0.3)
+
 
     # for how many steps do we decrease epsilon from its starting value to
     # its final value `epsilon_end`
