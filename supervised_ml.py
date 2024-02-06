@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from model_factory import get_model
 from utils import set_seed
@@ -110,7 +110,7 @@ class OptimalPolicyDataset(Dataset):
 
 def get_tensorboard_writer(run_name: str):
 
-    from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard.writer import SummaryWriter
     from config import TENSORBOARD_LOG_DIR
     tensorboard_writer = SummaryWriter(TENSORBOARD_LOG_DIR / 'sml' / run_name)
     return tensorboard_writer
@@ -204,12 +204,12 @@ def run(
 
     print('Generating train data for our supervised ML problem...')
     path_to_train_data = DATA_SUPERVISED_ML / 'train.csv'
-    env.seed(0)
+    set_seed(env, 0)
     generate_state_action_data(env, agent, n_samples=n_samples_train, path=path_to_train_data)
 
     print('Generating test data for our supervised ML problem...')
     path_to_test_data = DATA_SUPERVISED_ML / 'test.csv'
-    env.seed(1)
+    set_seed(env, 1)
     generate_state_action_data(env, agent, n_samples=n_samples_test, path=path_to_test_data)
 
     # load data from disk
@@ -234,7 +234,8 @@ def run(
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # model architecture
-    model = get_model(input_dim=4, output_dim=2, hidden_layers=hidden_layers)
+    hidden_layers_list = list(hidden_layers) if hidden_layers else None
+    model = get_model(input_dim=4, output_dim=2, hidden_layers=hidden_layers_list)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 

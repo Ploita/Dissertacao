@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Optional
 
 
 class RandomAgent:
@@ -9,7 +10,7 @@ class RandomAgent:
     def __init__(self, env):
         self.env = env
 
-    def act(self, state: np.array, epsilon: float = None) -> int:
+    def act(self, state: np.ndarray, epsilon: Optional[float] = None) -> int:
         """
         No input arguments to this function.
         The agent does not consider the state of the environment when deciding

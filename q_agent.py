@@ -21,7 +21,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 from torch.nn import functional as F
 
 from model_factory import get_model
@@ -58,7 +58,7 @@ class QAgent:
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
         steps_epsilon_decay: float = 50000,
-        log_dir: str = None,
+        log_dir: str = None, # TODO: change to Path
     ):
         """
         :param env:
