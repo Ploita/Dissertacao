@@ -43,7 +43,7 @@ def get_agent_id(env_name: str) -> str:
 
     return str(agent_id)
 
-def get_input_output_dims(env_name: str) -> Tuple[int]:
+def get_input_output_dims(env_name: str) -> Tuple[int, int]:
     """"""
     if 'MountainCar' in env_name:
         input_dim = 2
@@ -91,15 +91,15 @@ def get_success_rate_from_n_steps(env: gym.Env, steps: List[int]):
 
     import numpy as np
     if 'MountainCar' in str(env):
-        success_rate = np.mean((np.array(steps) < env._max_episode_steps) * 1.0)
+        success_rate = np.mean((np.array(steps) < env._max_episode_steps) * 1.0) # type: ignore
     elif 'CartPole' in str(env):
-        success_rate = np.mean((np.array(steps) >= env._max_episode_steps) * 1.0)
+        success_rate = np.mean((np.array(steps) >= env._max_episode_steps) * 1.0) # type: ignore
     else:
         raise Exception('Invalid environment name')
 
     return success_rate
 
-def get_observation_samples(env: gym.Env, n_samples: int) -> np.array:
+def get_observation_samples(env: gym.Env, n_samples: int) -> np.ndarray:
     """"""
     samples = []
     state = env.reset()[0]

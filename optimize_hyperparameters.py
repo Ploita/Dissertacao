@@ -128,7 +128,8 @@ def objective(
             epsilon_start=args['epsilon_start'],
             epsilon_end=args['epsilon_end'],
             steps_epsilon_decay=args['steps_epsilon_decay'],
-            log_dir=TENSORBOARD_LOG_DIR / env_name / agent_id
+            log_dir=TENSORBOARD_LOG_DIR / env_name / agent_id #type: ignore
+            # TODO: fix log_dir Path
         )
 
         # train loop

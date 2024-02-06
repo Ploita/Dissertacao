@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.nn import functional as F
+from typing import Optional, List
 
 from model_factory import get_model
 from agent_memory import AgentMemory
@@ -52,13 +53,14 @@ class QAgent:
         n_steps_warm_up_memory: int = 1000,
         freq_steps_train: int = 16,
         n_gradient_steps: int = 8,
-        nn_hidden_layers: List[int] = None,
+        nn_hidden_layers: Optional[List[int]] = None,
         max_grad_norm: int = 10,
         normalize_state: bool = False,
         epsilon_start: float = 1.0,
         epsilon_end: float = 0.05,
-        steps_epsilon_decay: float = 50000,
-        log_dir: str = None, # TODO: change to Path
+        steps_epsilon_decay: int = 50000,
+        log_dir: str = None, #type: ignore
+        # TODO: change log_dir to Path
     ):
         """
         :param env:
@@ -112,7 +114,7 @@ class QAgent:
 
         # create q model(s). Plural because we use 2 models: main one, and the other for the target.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.q_net, self.target_q_net = None, None
+        #self.q_net, self.target_q_net = None, None #* Espero não quebrar nada fazendo isso
         self._init_models(nn_hidden_layers)
         print(f'{get_num_model_parameters(self.q_net):,} parameters')
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=learning_rate) # Adam optimizer is a safe and standard choice
@@ -192,12 +194,12 @@ class QAgent:
         for target_param, param in zip(self.target_q_net.parameters(), self.q_net.parameters()):
             target_param.data.copy_(param.data)
 
-    def _normalize_state(self, state: np.array) -> np.array:
+    def _normalize_state(self, state: np.ndarray) -> np.ndarray:
         """"""
         # return (state - self.min_states) / (self.max_states - self.min_states)
         return (state - self.mean_states) / (self.std_states)
 
-    def _preprocess_state(self, state: np.array) -> np.array:
+    def _preprocess_state(self, state: np.ndarray) -> np.ndarray:
 
         # state = np.copy(state_)
 
@@ -212,14 +214,14 @@ class QAgent:
 
         return s
 
-    def act(self, state: np.array, epsilon: float = None) -> int:
+    def act(self, state: np.ndarray, epsilon: Optional[float] = None) -> int:
         """
         Behavioural policy
         """
         if epsilon is None:
             # update epsilon
             self.epsilon = self.epsilon_fn(self._step_counter)
-            epsilon = self.epsilon
+            epsilon = float(self.epsilon)
 
         if random.uniform(0, 1) < epsilon:
             # Explore action space
@@ -305,7 +307,8 @@ class QAgent:
             # backward step to adjust network parameters
             self.optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), self.max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), self.max_grad_norm) # type: ignore 
+            #TODO: essa função é privada, mas dá pra usar
             self.optimizer.step()
 
         if self.log_dir:

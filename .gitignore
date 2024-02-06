@@ -3,3 +3,5 @@ tensorboard_logs/
 *.pyc
 *.db
 optuna.db
+optuna.db
+*.db

@@ -22,26 +22,26 @@ def show_video(agent, env, sleep_sec: float = 0.1, seed: Optional[int] = 0, mode
         steps = 0
         fig, ax = plt.subplots(figsize=(8, 6))
 
-    done = False
-    while not done:
+        done = False
+        while not done:
 
-        action = agent.act(state, epsilon=0.001)
-        state, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
-        # LAPADULA
-        if mode == "rgb_array":
-            steps += 1
-            frame = env.render()
-            ax.cla()
-            ax.axes.yaxis.set_visible(False)
-            ax.imshow(frame)
-            ax.set_title(f'Steps: {steps}')
-            display(fig)
-            clear_output(wait=True)
-            plt.pause(sleep_sec)
-        else:
-            env.render()
-            sleep(sleep_sec)
+            action = agent.act(state, epsilon=0.001)
+            state, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            # LAPADULA
+            if mode == "rgb_array":
+                steps += 1
+                frame = env.render()
+                ax.cla()
+                ax.axes.yaxis.set_visible(False)
+                ax.imshow(frame)
+                ax.set_title(f'Steps: {steps}')
+                display(fig)
+                clear_output(wait=True)
+                plt.pause(sleep_sec)
+            else:
+                env.render()
+                sleep(sleep_sec)
 
 
 if __name__ == '__main__':
