@@ -44,11 +44,8 @@ def sample_hyper_parameters(
         nn_hidden_layers = None
     else:
         # neural network hidden layers
-        # nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [[256, 256]]) # ;-)
-        #nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [None, [[16, 16]], [[16, 32]], [[16, 64]], [[16, 128]], [[16, 256]], [[32, 32]], [[32, 64]], [[32, 128]], [[32, 256]], [[64, 64]], [[64, 128]], [[64, 256]], [[128, 128]], [128, 256], [256, 256]])
-        # [None, (16, 16), (16, 32), (16, 64), (16, 128), (16, 256), (32, 32), (32, 64), (32, 128), (32, 256), (64, 64), (64, 128), (64, 256), (128, 128), (128, 256), (256, 256)]
-        nn_hidden_layers_choices = [None, (64,64), (256,256)]
-        nn_hidden_layers_index = trial.suggest_int("nn_hidden_layers_index", 0, len(nn_hidden_layers_choices) - 1)
+        nn_hidden_layers_choices = [None, [64,64], [256, 256]]
+        nn_hidden_layers_index = trial.suggest_int("nn_hidden_layers", 0, len(nn_hidden_layers_choices) - 1)
         nn_hidden_layers = nn_hidden_layers_choices[nn_hidden_layers_index]
 
 
