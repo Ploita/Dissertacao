@@ -1,3 +1,4 @@
 saved_agents/
+tensorboard_logs/
 *.pyc
 *.db
