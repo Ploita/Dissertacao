@@ -5,7 +5,6 @@ from collections import deque
 from pdb import set_trace as stop
 
 import numpy as np
-from tqdm import tqdm
 import torch
 from torch.utils.tensorboard.writer import SummaryWriter
 
@@ -16,10 +15,10 @@ def train(
     env,
     n_episodes: int,
     log_dir: Optional[Path] = None,
-    max_steps: Optional[int] = int("inf"),
+    max_steps: Optional[float] = float("inf"),
     n_episodes_evaluate_agent: int = 100,
     freq_episodes_evaluate_agent: int = 200,
-) -> None:
+) -> Tuple[List, List]:
 
     # Tensorborad log writer
     logging = False
@@ -89,6 +88,7 @@ def train(
 
         if max_steps is not None and global_step_counter > max_steps:
             break
+    return reward_per_episode, steps_per_episode
 
 
 def evaluate(

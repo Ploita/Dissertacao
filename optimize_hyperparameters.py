@@ -44,9 +44,8 @@ def sample_hyper_parameters(
         nn_hidden_layers = None
     else:
         # neural network hidden layers
-        nn_hidden_layers_choices = [None, [64,64], [256, 256]]
-        nn_hidden_layers_index = trial.suggest_int("nn_hidden_layers", 0, len(nn_hidden_layers_choices) - 1)
-        nn_hidden_layers = nn_hidden_layers_choices[nn_hidden_layers_index]
+        nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [16, 32, 64, 128, 256, 512])
+       
 
 
     # how large do we let the gradients grow before capping them?
