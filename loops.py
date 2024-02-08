@@ -77,8 +77,8 @@ def train(
 
             # from utils import get_success_rate_from_n_steps
             # success_rate = get_success_rate_from_n_steps(env, eval_steps)
-            print(f'Reward mean: {np.mean(eval_rewards):.2f}, std: {np.std(eval_rewards):.2f}')
-            print(f'Num steps mean: {np.mean(eval_steps):.2f}, std: {np.std(eval_steps):.2f}')
+            #print(f'Reward mean: {np.mean(eval_rewards):.2f}, std: {np.std(eval_rewards):.2f}')
+            #print(f'Num steps mean: {np.mean(eval_steps):.2f}, std: {np.std(eval_steps):.2f}')
             # print(f'Success rate: {success_rate:.2%}')
             if logging:
                 writer = SummaryWriter(log_dir)
@@ -96,18 +96,19 @@ def evaluate(
     env,
     n_episodes: int,
     epsilon: Optional[float] = None,
-    seed: Optional[int] = 0,
+    seed: Optional[int] = 0
 ) -> Tuple[List, List]:
 
     from utils import set_seed
-    set_seed(env, seed)
+    
 
     # output metrics
     reward_per_episode = []
     steps_per_episode = []
 
     for i in range(0, n_episodes):
-
+        seed = np.random.randint(0, 2 ** 30 - 1)
+        set_seed(env, seed)
         state = env.reset()[0]
         rewards = 0
         steps = 0
@@ -115,7 +116,7 @@ def evaluate(
         while not done:
 
             action = agent.act(state, epsilon=epsilon)
-            next_state, reward, terminated, truncated, info = env.step(action)
+            next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
 
             rewards += reward
