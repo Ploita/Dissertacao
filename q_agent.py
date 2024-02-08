@@ -116,7 +116,7 @@ class QAgent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         #self.q_net, self.target_q_net = None, None #* Espero não quebrar nada fazendo isso
         self._init_models(nn_hidden_layers)
-        print(f'{get_num_model_parameters(self.q_net):,} parameters')
+        #print(f'{get_num_model_parameters(self.q_net):,} parameters')
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=learning_rate) # Adam optimizer is a safe and standard choice
         self.max_grad_norm = max_grad_norm
 

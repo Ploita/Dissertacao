@@ -140,7 +140,7 @@ def objective(
         agent.save_to_disk(SAVED_AGENTS_DIR / env_name / agent_id)
 
         # evaluate its performance
-        rewards, steps = evaluate(agent, env, n_episodes=1000, epsilon=0.00)
+        rewards, _ = evaluate(agent, env, n_episodes=1000, epsilon=0.00)
         mean_reward = np.mean(rewards)
         std_reward = np.std(rewards)
         mlflow.log_metric('mean_reward', mean_reward)
