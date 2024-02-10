@@ -132,12 +132,23 @@ def objective(
         )
 
         # train loop
-        train(agent,
+        rewards, _ = train(agent,
               env,
               n_episodes=n_episodes_to_train,
               log_dir=TENSORBOARD_LOG_DIR / env_name / agent_id)
 
-        agent.save_to_disk(SAVED_AGENTS_DIR / env_name / agent_id)
+        path = SAVED_AGENTS_DIR / env_name / agent_id
+        agent.save_to_disk(path)
+        
+        import os
+        import pickle
+        # Um toque meu para ver o treinamento
+        if not path.exists():
+            os.makedirs(path)
+
+        # save hyper-parameters in a json file
+        with open(path / 'rewards.pkl', 'wb') as f:
+            pickle.dump(rewards, f)
 
         # evaluate its performance
         rewards, _ = evaluate(agent, env, n_episodes=1000, epsilon=0.00)
