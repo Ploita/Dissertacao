@@ -1,98 +1,173 @@
-#!/usr/bin/env python
-# utils.py
-# Author: Fabrício Olivetti de França
-#
-# utility functions for the Q-Learning agent
-
-import sys
-import pickle
 import os
+from typing import Callable, Dict, Tuple, List
+import pathlib
+from pathlib import Path
+import json
+from pdb import set_trace as stop
+
 import numpy as np
-from numpy.random import uniform, choice, random
+import gym
+import yaml
+import torch.nn as nn
 
-# Todas as possíveis ações
-actions_map = {'noop':0, 'down':32, 'up':16, 'jump':1, 'spin':3, 
-               'left':64, 'jumpleft':65, 'runleft':66, 'runjumpleft':67, 
-               'right':128, 'jumpright':129, 'runright':130, 'runjumpright':131, 
-               'spin':256, 'spinright':384, 'runspinright':386, 'spinleft':320, 'spinrunleft':322
-               }
 
-# Vamos usar apenas um subconjunto
-actions_list = [66,130,128,131,386]
+def snake_to_camel(word):
+    import re
+    return ''.join(x.capitalize() or '_' for x in word.split('_'))
 
-def dec2bin(dec):
-    binN = []
-    while dec != 0:
-        binN.append(dec % 2)
-        dec = dec / 2
-    return binN
-    
-# faz as ações até mudar de estado
-def performAction(a, env):
-  reward = 0
-  if a == 64 or a == 128:
-    for it in range(8):
-      ob, rew, done, info = env.step(dec2bin(a))
-      reward += rew
-  elif a == 66 or a == 130:
-    for it in range(4):
-      ob, rew, done, info = env.step(dec2bin(a))
-      reward += rew
-  elif a == 131 or a == 67:
-    for it in range(8):
-      ob, rew, done, info = env.step(dec2bin(a))
-      reward += rew
-  elif a == 386 or 322:
-    for it in range(4):
-      ob, rew, done, info = env.step(dec2bin(a))
-      reward += rew
-  else:
-    ob, rew, done, info = env.step(dec2bin(a))
-    reward += rew
-  return reward
 
-# Retorna a melhor ação do estado atual pela matriz Q  
-def getBestActionDet(Q, state):
-  # recupera o valor de Q para todas as ações
-  qvals = np.array([Q.get(str(state) + ',' + str(ai),(0.0,0)) [0]
-                     for ai in actions_list])
+def get_agent_id(env_name: str) -> str:
+    """"""
+    from config import SAVED_AGENTS_DIR
 
-  # Se empatar, sorteia entre eles                     
-  maxval = np.max(qvals)
-  if (qvals == maxval).sum() > 1:
-    idx = choice(np.nonzero(qvals==maxval)[0])
-  else:
-    idx = np.argmax(qvals)
-  return idx
+    dir = Path(SAVED_AGENTS_DIR) / env_name
+    if not dir.exists():
+        os.makedirs(dir)
 
-def getNewActionDet(Q, state):
-  # recupera o valor de Q para todas as ações
-  qvals = np.array([Q.get(str(state) + ',' + str(ai),(0.0,0))[1] 
-                     for ai in actions_list])
+    # try:
+    #     agent_id = max([int(id) for id in os.listdir(dir)]) + 1
+    # except ValueError:
+    #     agent_id = 0
 
-  # Se empatar, sorteia entre eles       
-  if (np.abs(qvals)<=20).sum() > 0:
-    idx = choice(np.nonzero(np.abs(qvals)<=20)[0])
-  else:
-    idx = choice(np.nonzero(qvals)[0])
-  return idx
-  
-def loadInterface(display=False):
-  rle = RLEInterface()
-  rle.setInt(b'random_seed', 12)
-  rle.setBool(b'sound', False)
-  
-  if sys.platform == 'darwin':
-    import pygame
-    pygame.init()
-  rle.setBool(b'display_screen', display)
+    ids = []
+    for id in os.listdir(dir):
+        try:
+            ids.append(int(id))
+        except:
+            pass
+    if len(ids) > 0:
+        agent_id = max(ids) + 1
+    else:
+        agent_id = 0
+    # stop()
 
-  rle.loadROM('super_mario_world.smc', 'snes')
-  return rle
+    return str(agent_id)
 
-  
-def getStoredQ(fname='Q.pkl'):
-  Q, ep, maxActions = {}, 0, 0
-  if os.path.exists(fname):
-    Q, ep, maxActions = pickle.load(open(fname, 'rb'))
-  return Q, ep, maxActions 
+def get_input_output_dims(env_name: str) -> Tuple[int, int]:
+    """"""
+    if 'MountainCar' in env_name:
+        input_dim = 2
+        output_dim = 3
+    elif 'CartPole' in env_name:
+        input_dim = 4
+        output_dim = 2
+    else:
+        raise Exception('Invalid environment')
+
+    return input_dim, output_dim
+
+
+def get_epsilon_decay_fn(
+    eps_start: float,
+    eps_end: float,
+    total_episodes: int
+) -> Callable:
+    """
+    Returns function epsilon_fn, which depends on
+    a single input, step, which is the current episode
+    """
+    def epsilon_fn(episode: int) -> float:
+        r = max((total_episodes - episode) / total_episodes, 0)
+        return (eps_start - eps_end)*r + eps_end
+
+    return epsilon_fn
+
+
+def get_epsilon_exponential_decay_fn(
+    eps_max: float,
+    eps_min: float,
+    decay: float,
+) -> Callable:
+    """
+    Returns function epsilon_fn, which depends on
+    a single input, step, which is the current episode
+    """
+    def epsilon_fn(episode: int) -> float:
+        return max(eps_min, eps_max * (decay ** episode))
+    return epsilon_fn
+
+
+def get_success_rate_from_n_steps(env: gym.Env, steps: List[int]):
+
+    import numpy as np
+    if 'MountainCar' in str(env):
+        success_rate = np.mean((np.array(steps) < env._max_episode_steps) * 1.0) # type: ignore
+    elif 'CartPole' in str(env):
+        success_rate = np.mean((np.array(steps) >= env._max_episode_steps) * 1.0) # type: ignore
+    else:
+        raise Exception('Invalid environment name')
+
+    return success_rate
+
+def get_observation_samples(env: gym.Env, n_samples: int) -> np.ndarray:
+    """"""
+    samples = []
+    state = env.reset()[0]
+    while len(samples) < n_samples:
+
+        samples.append(np.copy(state))
+        action = env.action_space.sample()
+        next_state, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        
+        if done:
+            state = env.reset()[0]
+        else:
+            state = next_state
+
+    return np.array(samples)
+
+
+def set_seed(
+    env,
+    seed
+):
+    """To ensure reproducible runs we fix the seed for different libraries"""
+    import random
+    random.seed(seed)
+
+    import numpy as np
+    np.random.seed(seed)
+
+    #env.seed(seed)
+    env.action_space.seed(seed)
+
+    import torch
+    torch.manual_seed(seed)
+
+    # Deterministic operations for CuDNN, it may impact performances
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # env.seed(seed)
+    # gym.spaces.prng.seed(seed)
+
+
+def get_num_model_parameters(model: nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+# from dotenv import dotenv_values
+# import uuid
+# from pdb import set_trace as stop
+
+# import pandas as pd
+# import git
+
+# from io import get_list_files
+
+
+# def get_project_root() -> Path:
+#     return Path(__file__).parent.resolve().parent
+#
+# from typing import Dict
+# def load_env_config() -> Dict:
+#     """
+#     """
+#     config = dotenv_values(get_project_root() / ".env")
+#     return config
+#
+
+
+
+

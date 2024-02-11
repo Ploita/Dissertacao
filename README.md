@@ -1,2 +1,0 @@
-# PlanoB
- Dissertação Plano B
