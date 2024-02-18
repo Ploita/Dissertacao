@@ -13,7 +13,8 @@ from config import TENSORBOARD_LOG_DIR, SAVED_AGENTS_DIR, OPTUNA_DB
 from utils import set_seed
 from loops import train, evaluate
 
-
+#todo: atualizar esssa função pra ser mais fácil de ver os limites dos parâmetros
+#todo: condicionar ela para os múltiplos métodos
 def sample_hyper_parameters(
     trial: optuna.trial.Trial,
     force_linear_model: bool = False,
@@ -45,8 +46,6 @@ def sample_hyper_parameters(
     else:
         # neural network hidden layers
         nn_hidden_layers = trial.suggest_categorical("nn_hidden_layers", [16, 32, 64, 128, 256, 512])
-       
-
 
     # how large do we let the gradients grow before capping them?
     # Explosive gradients can be an issue and this hyper-parameters helps mitigate it.
@@ -61,7 +60,6 @@ def sample_hyper_parameters(
 
     # final value for the exploration rate
     epsilon_end = trial.suggest_float("epsilon_end", 0, 0.3)
-
 
     # for how many steps do we decrease epsilon from its starting value to
     # its final value `epsilon_end`
@@ -87,7 +85,7 @@ def sample_hyper_parameters(
         'seed': seed,
     }
 
-
+#todo: fazer essa aqui ser genérica para o método
 def objective(
     trial: optuna.trial.Trial,
     force_linear_model: bool = False,
