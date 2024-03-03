@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from pdb import set_trace as stop
 
 import optuna
-import gym
+import gymnasium as gym
 import numpy as np
 import mlflow
 

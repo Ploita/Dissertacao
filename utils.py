@@ -6,7 +6,7 @@ import json
 from pdb import set_trace as stop
 
 import numpy as np
-import gym
+import gymnasium as gym
 import yaml
 import torch.nn as nn
 
