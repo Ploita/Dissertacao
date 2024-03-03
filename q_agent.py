@@ -46,19 +46,19 @@ class QAgent:
         self,
         env: gym.Env,
         learning_rate: float = 1e-4,
-        discount_factor: float = 0.99,
+        discount_factor: float = 0.99, #gamma
         batch_size: int = 64,
-        memory_size: int = 10000,
-        freq_steps_update_target: int = 1000,
-        n_steps_warm_up_memory: int = 1000,
-        freq_steps_train: int = 16,
-        n_gradient_steps: int = 8,
-        nn_hidden_layers: Optional[List[int]] = None,
-        max_grad_norm: int = 10,
-        normalize_state: bool = False,
-        epsilon_start: float = 1.0,
-        epsilon_end: float = 0.05,
-        steps_epsilon_decay: int = 50000,
+        memory_size: int = 10000, #buffer sizw
+        freq_steps_train: int = 16, #train freq
+        freq_steps_update_target: int = 1000, #target_update_interval
+        n_steps_warm_up_memory: int = 1000, #learning_starts
+        n_gradient_steps: int = 8, #gradient_steps
+        nn_hidden_layers: Optional[List[int]] = None, 
+        max_grad_norm: int = 10, #max_grad_norm
+        normalize_state: bool = False, # Esse não tem no sb3
+        epsilon_start: float = 1.0, #exploration_initial_eps
+        epsilon_end: float = 0.05, #exploration_final_eps
+        steps_epsilon_decay: int = 50000, #é tipo o inverso de exploration_fraction
         log_dir: str = None, #type: ignore
         # TODO: change log_dir to Path
     ):
