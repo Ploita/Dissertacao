@@ -5,3 +5,4 @@ tensorboard_logs/
 optuna.db
 optuna.db
 *.db
+.vscode/settings.json
