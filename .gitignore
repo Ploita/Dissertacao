@@ -5,3 +5,5 @@ tensorboard_logs/
 optuna.db
 optuna.db
 *.db
+BipedalWalker-v3/False1\[128, 256\]20000-episode-0.meta.json
+BipedalWalker-v3/False1\[128, 256\]20000-episode-0.mp4
