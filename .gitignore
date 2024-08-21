@@ -2,8 +2,6 @@ saved_agents/
 tensorboard_logs/
 *.pyc
 *.db
-optuna.db
-optuna.db
-*.db
-BipedalWalker-v3/False1\[128, 256\]20000-episode-0.meta.json
-BipedalWalker-v3/False1\[128, 256\]20000-episode-0.mp4
+*.json
+*.mp4
+*.txt
