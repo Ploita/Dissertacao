@@ -5,3 +5,4 @@ tensorboard_logs/
 *.json
 *.mp4
 *.txt
+*.csv
