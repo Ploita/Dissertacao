@@ -6,3 +6,4 @@ tensorboard_logs/
 *.mp4
 *.txt
 *.csv
+/NPEET
