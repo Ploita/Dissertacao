@@ -7,3 +7,4 @@ tensorboard_logs/
 *.txt
 *.csv
 /NPEET
+*.jpg
