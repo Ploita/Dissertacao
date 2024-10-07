@@ -263,9 +263,9 @@ class Experimento():
         try:
             nome = arquivos[-1].split('-')
             indice = int(nome[nome.index('serie') + 1]) + 1
-            prefix = str(self.env_id) + '-serie-' + str(indice)    
+            prefix = f'{self.env_id}-serie-{indice}'    
         except:
-            prefix = str(self.env_id) + '-serie-' + str(1)
+            prefix = f'{self.env_id}-serie-1'
 
         return prefix
     
@@ -309,7 +309,7 @@ class Experimento():
                 break
         env.close()
 
-    def coleta_dado(self, n: int, dir: str = 'coleta.csv'):
+    def coleta_dado(self, n: int, dir: str = 'dados.csv'):
         assert self.model is not None
         env = gymnasium.make('CartPole-v1')
 
