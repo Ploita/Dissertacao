@@ -51,7 +51,7 @@ class CustomCallback(BaseCallback):
     def _on_step(self) -> bool:
         return super()._on_step()
     
-    def _on_rollout_end(self) -> None:
+    def _on_rollout_start(self) -> None:
         if not self.coleta:
             return super()._on_rollout_end()
         env = gymnasium.make('CartPole-v1')
@@ -115,6 +115,9 @@ class PPO_tunado(PPO):
             for epoch in range(self.n_epochs):
                 approx_kl_divs = []
                 mutual_info = [[] for _ in range(5)]
+                grad_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
+                weights_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
+                
                 # Do a complete pass on the rollout buffer
                 for rollout_data in self.rollout_buffer.get(self.batch_size):
                     actions = rollout_data.actions
@@ -205,6 +208,11 @@ class PPO_tunado(PPO):
                         mutual_info[2].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
                         mutual_info[4].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
 
+                        for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                            grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
+                            weights_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].clone().detach().norm().cpu().numpy())
+
+
                 # Logs
                 for i, medida in enumerate(mutual_info):
                     self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
@@ -215,7 +223,8 @@ class PPO_tunado(PPO):
                 self.logger.record("train/clip_fraction", np.mean(clip_fractions))
                 self.logger.record("train/loss", loss.item())
                 for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
-                    self.logger.record(f"train/gradient_layer_{i}", self.policy.optimizer.param_groups[0]['params'][i].clone().detach().norm().cpu().numpy())
+                    self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
+                    self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
                 if hasattr(self.policy, "log_std"):
                     self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
                 self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
@@ -245,7 +254,7 @@ class Experimento():
         self.env_id = 'CartPole-v1'
         self.n_envs = 4
         self.size = [64, 64]
-        self.fib_seeds = 5
+        self.fib_seeds = fib(5)
         self.timesteps = int(1e3) #todo: atualizar isso depois
         self.model = None
         self.recording = False
@@ -285,7 +294,7 @@ class Experimento():
         self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, policy_kwargs= dict(net_arch = dict(pi=self.size, vf=self.size)), device= self.device) 
         #* Não tenho interesse em deixar o ator e crítico com tamanhos diferentes
 
-        seeds = fib(self.fib_seeds)
+        seeds = self.fib_seeds
         for seed in seeds:
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps= self.timesteps, callback= CustomCallback(verbose=0, coleta = self.coleta))
