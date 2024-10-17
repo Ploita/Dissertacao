@@ -8,3 +8,4 @@ tensorboard_logs/
 *.csv
 /NPEET
 *.jpg
+Dados_Teste_0/Plots/Grad_evolution.png

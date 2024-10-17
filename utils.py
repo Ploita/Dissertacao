@@ -8,6 +8,7 @@ from stable_baselines3.ppo import PPO
 from torch.nn import functional as F
 from pushbullet import Pushbullet
 from gymnasium import spaces
+from scipy import linalg
 import pandas as pd
 import numpy as np
 import gymnasium
@@ -41,6 +42,58 @@ def fib(n: int):
 
 def tensor_to_numpy(val:torch.Tensor):
     return val.clone().detach().cpu().numpy()
+
+class Controller:
+    '''Implements a feedback controller'''
+    def __init__(self, environment):
+        # gravity
+        self.g = 10
+        # pole length
+        self.lp = environment.env.get_wrapper_attr('length')
+        # pole mass
+        self.mp = environment.env.get_wrapper_attr('masspole')
+        # cart mass
+        self.mk = environment.env.get_wrapper_attr('masscart')
+        # total mass
+        self.mt = environment.env.get_wrapper_attr('total_mass')
+        
+    def state_controller(self):
+        # state matrix
+        a = self.g/(self.lp*(4.0/3 - self.mp/(self.mp+self.mk)))
+        A = np.array([[0, 1, 0, 0],
+            [0, 0, a, 0],
+            [0, 0, 0, 1],
+            [0, 0, a, 0]])
+            
+        # input matrix
+        b = -1/(self.lp*(4.0/3 - self.mp/(self.mp+self.mk)))
+        B = np.array([[0], [1/self.mt], [0], [b]])
+        
+        # choose R (weight for input)
+        R = np.eye(1, dtype=int)
+        # choose Q (weight for state)
+        Q = 5*np.eye(4, dtype=int)
+        
+        # solve ricatti equation
+        P = linalg.solve_continuous_are(A, B, Q, R)     #! Tem algo aqui que crasha o kernel
+        
+        # calculate optimal controller gain
+        K = np.dot(np.linalg.inv(R), np.dot(B.T, P))
+
+        return K
+        
+    def apply_state_controller(self, x):
+        # Adaptei pro modo torch
+        K = self.state_controller()
+        
+        # Calcular a força para todos os estados em um único passo
+        forces = -torch.matmul(x, torch.tensor(K.astype(np.float32).T))
+        
+        # Determinar a ação (0 ou 1) com base na força
+        actions = torch.where(forces > 0, torch.ones_like(forces), torch.zeros_like(forces))
+
+        return actions
+
 
 class CustomCallback(BaseCallback):
     def __init__(self, coleta: bool, verbose: int = 0):
@@ -91,7 +144,8 @@ class PPO_tunado(PPO):
         def __init__(self, direc: str, *args, **kwargs):
             super().__init__(*args, **kwargs)
             self.direc = direc
-
+            self.control = Controller(self.env.get_attr('env')[0]) #type: ignore
+       
         def train(self):
             """
             Update policy using the currently gathered rollout buffer.
@@ -114,7 +168,7 @@ class PPO_tunado(PPO):
             # train for n_epochs epochs
             for epoch in range(self.n_epochs):
                 approx_kl_divs = []
-                mutual_info = [[] for _ in range(5)]
+                mutual_info = [[] for _ in range(7)]
                 grad_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
                 weights_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
                 
@@ -202,11 +256,15 @@ class PPO_tunado(PPO):
                         layer1_activations = self.policy.mlp_extractor.policy_net[0](entrada)
                         layer2_activations = self.policy.mlp_extractor.policy_net[2](torch.tanh(layer1_activations))
                         output = self.policy.action_net(torch.tanh(layer2_activations))
+                        control_output = self.control.apply_state_controller(rollout_data.observations)
                         mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
                         mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
                         mutual_info[3].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
                         mutual_info[2].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
                         mutual_info[4].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
+                        mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
+                        mutual_info[6].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
+
 
                         for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
                             grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
@@ -214,23 +272,24 @@ class PPO_tunado(PPO):
 
 
                 # Logs
-                for i, medida in enumerate(mutual_info):
-                    self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
-                self.logger.record("train/entropy_loss", np.mean(entropy_losses))
-                self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
-                self.logger.record("train/value_loss", np.mean(value_losses))
-                self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
-                self.logger.record("train/clip_fraction", np.mean(clip_fractions))
-                self.logger.record("train/loss", loss.item())
-                for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
-                    self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
-                    self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
-                if hasattr(self.policy, "log_std"):
-                    self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
-                self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-                self.logger.record("train/clip_range", clip_range)
-                if self.clip_range_vf is not None:
-                    self.logger.record("train/clip_range_vf", clip_range_vf)
+                with torch.no_grad():
+                    for i, medida in enumerate(mutual_info):
+                        self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
+                    self.logger.record("train/entropy_loss", np.mean(entropy_losses))
+                    self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
+                    self.logger.record("train/value_loss", np.mean(value_losses))
+                    self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
+                    self.logger.record("train/clip_fraction", np.mean(clip_fractions))
+                    self.logger.record("train/loss", loss.item())
+                    for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                        self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
+                        self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
+                    if hasattr(self.policy, "log_std"):
+                        self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
+                    self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+                    self.logger.record("train/clip_range", clip_range)
+                    if self.clip_range_vf is not None:
+                        self.logger.record("train/clip_range_vf", clip_range_vf)
 
                 # --- Início da seção modificada ---
                 # CSV writing
@@ -257,6 +316,26 @@ class Experimento():
         self.fib_seeds = fib(5)
         self.timesteps = int(1e3) #todo: atualizar isso depois
         self.model = None
+        # Model Parameters
+        self.gae_lambda = 0.95
+        self.clip_range = 0.2
+        self.clip_range_vf = None
+        self.normalize_advantage = True
+        self.ent_coef = 0.0
+        self.vf_coef = 0.5
+        self.max_grad_norm = 0.5
+        self.use_sde = False
+        self.sde_sample_freq = -1
+        self.rollout_buffer_class = None
+        self.rollout_buffer_kwargs = None
+        self.target_kl = None
+        self.stats_window_size = 100
+        self.tensorboard_log = None
+        self.policy_kwargs = None
+        self.verbose = 0
+        self.seed = None
+        self.device = "auto"
+        # Recording Parameters
         self.recording = False
         self.recording_ep_freq = 100
         self.device = 'auto'
