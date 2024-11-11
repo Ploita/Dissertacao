@@ -111,7 +111,7 @@ class CustomCallback(BaseCallback):
         self.model.set_random_seed(0)   #* Reprodutibilidade 
         seeds = fib(100)                #* Reprodutibilidade 
 
-        dir = f'Coleta/coleta_treino_{self.counter}.csv'
+        dir = f'Coleta/coleta_treino_{str(self.counter).zfill(3)}.csv'
         for ite, seed in enumerate(seeds):
             obs = env.reset(seed=seed)[0]   #* Reprodutibilidade 
             done = False
@@ -259,8 +259,8 @@ class PPO_tunado(PPO):
                         control_output = self.control.apply_state_controller(rollout_data.observations)
                         mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
                         mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
-                        mutual_info[3].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
-                        mutual_info[2].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
+                        mutual_info[2].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
+                        mutual_info[3].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
                         mutual_info[4].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
                         mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
                         mutual_info[6].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
@@ -317,6 +317,8 @@ class Experimento():
         self.timesteps = int(1e3) #todo: atualizar isso depois
         self.model = None
         # Model Parameters
+        self.learning_rate = 3e-4
+        self.gamma = 0.99
         self.gae_lambda = 0.95
         self.clip_range = 0.2
         self.clip_range_vf = None
@@ -366,7 +368,7 @@ class Experimento():
         
         # Ambiente de treinamento
         self.train_env = make_vec_env(self.env_id, n_envs= self.n_envs, seed=0, wrapper_class=Monitor)
-    
+        #todo incluir os hparams no PPO
         if self.recording:
             prefix = self.ultimo_indice()
             self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= self.env_id, name_prefix= prefix, episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)

@@ -9,3 +9,4 @@ tensorboard_logs/
 /NPEET
 *.jpg
 Dados_Teste_0/Plots/Grad_evolution.png
+*.pdf
