@@ -310,7 +310,7 @@ class PPO_tunado(PPO):
                 data = self.logger.name_to_value
                 df = pd.DataFrame(data, index=[0])
 
-                df.to_csv(self.direc, mode='w', index=False, header=not os.path.exists(self.direc))
+                df.to_csv(self.direc, mode='w', index=False)
                 # --- Fim da seção modificada ---
                 
                 self._n_updates += 1
