@@ -3,9 +3,11 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from gymnasium.wrappers.record_video import RecordVideo
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import VecEnv
 from npeet import entropy_estimators as ee
 from stable_baselines3.ppo import PPO
 from torch.nn import functional as F
+from typing import Union, Optional
 from pushbullet import Pushbullet
 from gymnasium import spaces
 from scipy import linalg
@@ -141,11 +143,15 @@ class CustomCallback(BaseCallback):
         self.counter += 1
 
 class PPO_tunado(PPO):
-        def __init__(self, direc: str, *args, **kwargs):
-            super().__init__(*args, **kwargs)
+        def __init__(self, direc: str, policy: str, env: Union[gymnasium.Env, "VecEnv"], ref_agent: Optional[str], hparams: dict ):            
+            super().__init__(policy, env, **hparams)
             self.direc = direc
             self.control = Controller(self.env.get_attr('env')[0]) #type: ignore
-       
+            self.reference_agent = None
+            if ref_agent is not None:
+                self.reference_agent = PPO('MlpPolicy', env)
+                self.reference_agent.load(ref_agent)
+            
         def train(self):
             """
             Update policy using the currently gathered rollout buffer.
@@ -168,7 +174,7 @@ class PPO_tunado(PPO):
             # train for n_epochs epochs
             for epoch in range(self.n_epochs):
                 approx_kl_divs = []
-                mutual_info = [[] for _ in range(7)]
+                mutual_info = [[] for _ in range(12)]
                 grad_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
                 weights_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
                 
@@ -259,12 +265,20 @@ class PPO_tunado(PPO):
                         control_output = self.control.apply_state_controller(rollout_data.observations)
                         mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
                         mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
-                        mutual_info[2].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
-                        mutual_info[3].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
-                        mutual_info[4].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
-                        mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
-                        mutual_info[6].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
+                        mutual_info[2].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(output)))
+                        mutual_info[3].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(control_output)))
+                        mutual_info[4].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
+                        mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
+                        mutual_info[6].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
+                        mutual_info[7].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
+                        mutual_info[8].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
 
+                        if self.reference_agent is not None:
+                            reference_output = self.reference_agent.predict(rollout_data.observations)[0] #type: ignore
+                            mutual_info[9].append(ee.mi(tensor_to_numpy(entrada), reference_output)) 
+                            mutual_info[10].append(ee.mi(tensor_to_numpy(layer1_activations), reference_output)) 
+                            mutual_info[11].append(ee.mi(tensor_to_numpy(layer2_activations), reference_output)) 
+                            
 
                         for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
                             grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
@@ -315,9 +329,13 @@ class Experimento():
         self.size = [64, 64]
         self.fib_seeds = fib(5)
         self.timesteps = int(1e3) #todo: atualizar isso depois
-        self.model = None
+        self.reference_agent = None
+
         # Model Parameters
         self.learning_rate = 3e-4
+        self.n_steps = 2048
+        self.batch_size = 64
+        self.n_epochs = 10
         self.gamma = 0.99
         self.gae_lambda = 0.95
         self.clip_range = 0.2
@@ -337,6 +355,7 @@ class Experimento():
         self.verbose = 0
         self.seed = None
         self.device = "auto"
+        
         # Recording Parameters
         self.recording = False
         self.recording_ep_freq = 100
@@ -346,6 +365,39 @@ class Experimento():
 
         for chave, valor in params.items():
             setattr(self, chave, valor)
+
+        hyperparams = {
+            'learning_rate': self.learning_rate,
+            'n_steps': self.n_steps,
+            'batch_size': self.batch_size,
+            'n_epochs': self.n_epochs,
+            'gamma': self.gamma,
+            'gae_lambda': self.gae_lambda,
+            'clip_range': self.clip_range,
+            'clip_range_vf': self.clip_range_vf,
+            'normalize_advantage': self.normalize_advantage,
+            'ent_coef': self.ent_coef,
+            'vf_coef': self.vf_coef,
+            'max_grad_norm': self.max_grad_norm,
+            'use_sde': self.use_sde,
+            'sde_sample_freq': self.sde_sample_freq,
+            'rollout_buffer_class': self.rollout_buffer_class,
+            'rollout_buffer_kwargs': self.rollout_buffer_kwargs,
+            'target_kl': self.target_kl,
+            'stats_window_size': self.stats_window_size,
+            'tensorboard_log': self.tensorboard_log,
+            'policy_kwargs': self.policy_kwargs,
+            'verbose': self.verbose,
+            'seed': self.seed,
+            'device': self.device
+        }        
+
+        self.train_env = make_vec_env(self.env_id, n_envs= self.n_envs, seed=0, wrapper_class=Monitor)
+        if self.recording:
+            prefix = self.ultimo_indice()
+            self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= self.env_id, name_prefix= prefix, episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
+        
+        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, hyperparams) 
 
     def ultimo_indice(self): 
         # Extrair o último índice
@@ -367,13 +419,6 @@ class Experimento():
             os.remove(self.direc)
         
         # Ambiente de treinamento
-        self.train_env = make_vec_env(self.env_id, n_envs= self.n_envs, seed=0, wrapper_class=Monitor)
-        #todo incluir os hparams no PPO
-        if self.recording:
-            prefix = self.ultimo_indice()
-            self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= self.env_id, name_prefix= prefix, episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
-        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, policy_kwargs= dict(net_arch = dict(pi=self.size, vf=self.size)), device= self.device) 
-        #* Não tenho interesse em deixar o ator e crítico com tamanhos diferentes
 
         seeds = self.fib_seeds
         for seed in seeds:
