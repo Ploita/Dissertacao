@@ -16,6 +16,7 @@ import numpy as np
 import gymnasium
 import keyboard
 import torch
+import json
 import os
 
 def alerta():
@@ -98,10 +99,12 @@ class Controller:
 
 
 class CustomCallback(BaseCallback):
-    def __init__(self, coleta: bool, verbose: int = 0):
+    def __init__(self, coleta: bool, env_id: str, direc: str, verbose: int = 0):
         super().__init__(verbose)
         self.counter = 0
         self.coleta = coleta
+        self.env_id = env_id
+        self.direc = direc
 
     def _on_step(self) -> bool:
         return super()._on_step()
@@ -109,11 +112,11 @@ class CustomCallback(BaseCallback):
     def _on_rollout_start(self) -> None:
         if not self.coleta:
             return super()._on_rollout_end()
-        env = gymnasium.make('CartPole-v1')
+        env = gymnasium.make(self.env_id)
         self.model.set_random_seed(0)   #* Reprodutibilidade 
         seeds = fib(100)                #* Reprodutibilidade 
-
-        dir = f'Coleta/coleta_treino_{str(self.counter).zfill(3)}.csv'
+        os.makedirs(os.path.join(self.direc, 'Coleta'))
+        dir = os.path.join(self.direc,f'Coleta/coleta_treino_{str(self.counter).zfill(3)}.csv')
         for ite, seed in enumerate(seeds):
             obs = env.reset(seed=seed)[0]   #* Reprodutibilidade 
             done = False
@@ -135,8 +138,7 @@ class CustomCallback(BaseCallback):
                         'Distribuição': action2.distribution.probs[0,0].clone().detach().cpu().numpy(), #type: ignore
                         'Entropia': action2.distribution.entropy().clone().detach().cpu().numpy() #type: ignore
                                 }, index=[0])
-                mode = 'a' if os.path.exists(dir) else 'w'
-                df.to_csv(dir, mode=mode, index=False, header= not os.path.exists(dir))
+                df.to_csv(dir, mode= 'a' if os.path.exists(dir) else 'w', index=False, header= not os.path.exists(dir))
                 done = terminated or truncated
                 i += 1
             env.close()
@@ -145,7 +147,7 @@ class CustomCallback(BaseCallback):
 class PPO_tunado(PPO):
         def __init__(self, direc: str, policy: str, env: Union[gymnasium.Env, "VecEnv"], ref_agent: Optional[str], hparams: dict ):            
             super().__init__(policy, env, **hparams)
-            self.direc = direc
+            self.direc = os.path.join(direc, 'resultados.csv')
             self.control = Controller(self.env.get_attr('env')[0]) #type: ignore
             self.reference_agent = None
             if ref_agent is not None:
@@ -310,7 +312,7 @@ class PPO_tunado(PPO):
                 data = self.logger.name_to_value
                 df = pd.DataFrame(data, index=[0])
 
-                df.to_csv(self.direc, mode='w', index=False)
+                df.to_csv(self.direc, mode='a' if os.path.exists(self.direc) else 'w', index=False, header= not os.path.exists(self.direc))
                 # --- Fim da seção modificada ---
                 
                 self._n_updates += 1
@@ -359,8 +361,15 @@ class Experimento():
         self.recording = False
         self.recording_ep_freq = 100
         self.device = 'auto'
-        self.direc = 'resultados.csv'
         self.coleta = False
+        #isso serve pra criar uma pasta com número maior sem perder a ordenação
+        if not os.path.exists('experimento/000'):
+            os.makedirs('experimento/000')
+            self.direc = 'experimento/000'
+        else:
+            self.direc = os.path.join('experimento', str(int(os.listdir('experimento')[-1]) + 1).zfill(3))
+            os.makedirs(self.direc)
+
 
         for chave, valor in params.items():
             setattr(self, chave, valor)
@@ -393,22 +402,9 @@ class Experimento():
 
         self.train_env = make_vec_env(self.env_id, n_envs= self.n_envs, seed=0, wrapper_class=Monitor)
         if self.recording:
-            prefix = self.ultimo_indice()
-            self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= self.env_id, name_prefix= prefix, episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
+            self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= os.path.join(self.direc, 'videos'), episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
         
         self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, hyperparams) 
-
-    def ultimo_indice(self): 
-        # Extrair o último índice
-        arquivos = os.listdir(self.env_id)
-        try:
-            nome = arquivos[-1].split('-')
-            indice = int(nome[nome.index('serie') + 1]) + 1
-            prefix = f'{self.env_id}-serie-{indice}'    
-        except:
-            prefix = f'{self.env_id}-serie-1'
-
-        return prefix
     
     def treinamento(self):
         #* Reprodutibilidade
@@ -419,7 +415,15 @@ class Experimento():
         seeds = self.fib_seeds
         for seed in seeds:
             self.model.set_random_seed(seed)
-            self.model.learn(total_timesteps= self.timesteps, callback= CustomCallback(verbose=0, coleta = self.coleta))
+            self.model.learn(total_timesteps= self.timesteps, callback= CustomCallback(verbose=0, coleta = self.coleta, env_id= self.env_id, direc= self.direc))
+
+        if not self.recording:
+            self.model.save(os.path.join(self.direc, 'agente_treinado'))
+
+        params = {chave: valor for chave, valor in self.__dict__.items() if not chave in ['train_env', 'model']}
+        json_string = json.dumps(params)
+        with open(os.path.join(self.direc, 'hparams.json'), 'w') as arquivo:      
+            arquivo.write(json_string)
 
         self.train_env.close()
 
@@ -440,10 +444,10 @@ class Experimento():
                 break
         env.close()
 
-    def coleta_dado(self, n: int, dir: str = 'dados.csv'):
+    def coleta_dado(self, n: int):
         assert self.model is not None
         env = gymnasium.make('CartPole-v1')
-
+        dir = os.path.join(self.direc, 'dados.csv')
         self.model.set_random_seed(0)   #* Reprodutibilidade 
         seeds = fib(n)        #* Reprodutibilidade 
 
@@ -471,8 +475,7 @@ class Experimento():
                         'Distribuição': action2.distribution.probs[0,0].clone().detach().cpu().numpy(), #type: ignore
                         'Entropia': action2.distribution.entropy().clone().detach().cpu().numpy() #type: ignore
                 }, index=[0])
-                mode = 'a' if os.path.exists(dir) else 'w'
-                df.to_csv(dir, mode=mode, index=False, header= not os.path.exists(dir))
+                df.to_csv(dir, mode='a' if os.path.exists(dir) else 'w', index=False, header= not os.path.exists(dir))
                 done = terminated or truncated
                 i += 1
             env.close()
