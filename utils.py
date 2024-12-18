@@ -19,12 +19,33 @@ import torch
 import json
 import os
 
+# usar com o decorador @wrap_alerta
+def wrap_alerta(func):
+    """função para alertar via pushbullet
+    """
+    def msg(key: int, f):
+        with open('chave.txt', 'r') as arquivo:
+            chave = arquivo.read()
+            pb = Pushbullet(chave)
+            title = 'Fim da execução!' if key == 1 else 'Deu ruim!'
+            pb.push_note(title, f)        
+
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            msg(0, e)
+        finally:
+            msg(1,'cabou')
+    return wrapper
+
 def alerta():
     with open('chave.txt', 'r') as arquivo:
         chave = arquivo.read()
         pb = Pushbullet(chave)
-        pb.push_note("Fim da execução!", "Seu código no computador do laboratório terminou de rodar.")
-    print('Done.')
+        title = 'Fim da execução!'
+        pb.push_note(title, 'cabou') 
+
 
 def fib(n: int):
     """Gera os n primeiros números da sequência de Fibonacci utilizando um loop.
@@ -145,14 +166,15 @@ class CustomCallback(BaseCallback):
         self.counter += 1
 
 class PPO_tunado(PPO):
-        def __init__(self, direc: str, policy: str, env: Union[gymnasium.Env, "VecEnv"], ref_agent: Optional[str], hparams: dict ):            
+        def __init__(self, direc: str, policy: str, env: gymnasium.Env, ref_agent: Optional[str], calc_mi: bool, hparams: dict ):            
             super().__init__(policy, env, **hparams)
             self.direc = os.path.join(direc, 'resultados.csv')
             self.control = Controller(self.env.get_attr('env')[0]) #type: ignore
-            self.reference_agent = None
+            self.calc_mi = calc_mi
             if ref_agent is not None:
-                self.reference_agent = PPO('MlpPolicy', env)
-                self.reference_agent.load(ref_agent)
+                temp_agent = PPO('MlpPolicy', env)
+                self.reference_agent = temp_agent.load(ref_agent)
+                
             
         def train(self):
             """
@@ -258,62 +280,63 @@ class PPO_tunado(PPO):
                     torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                     self.policy.optimizer.step()
 
-                    with torch.no_grad():
-                        entrada = self.policy.extract_features(rollout_data.observations)
-                        assert (type(entrada) is torch.Tensor)
-                        layer1_activations = self.policy.mlp_extractor.policy_net[0](entrada)
-                        layer2_activations = self.policy.mlp_extractor.policy_net[2](torch.tanh(layer1_activations))
-                        output = self.policy.action_net(torch.tanh(layer2_activations))
-                        control_output = self.control.apply_state_controller(rollout_data.observations)
-                        mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
-                        mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
-                        mutual_info[2].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(output)))
-                        mutual_info[3].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(control_output)))
-                        mutual_info[4].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
-                        mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
-                        mutual_info[6].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
-                        mutual_info[7].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
-                        mutual_info[8].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
+                    if self.calc_mi:
+                        with torch.no_grad():
+                            entrada = self.policy.extract_features(rollout_data.observations)
+                            assert (type(entrada) is torch.Tensor)
+                            layer1_activations = self.policy.mlp_extractor.policy_net[0](entrada)
+                            layer2_activations = self.policy.mlp_extractor.policy_net[2](torch.tanh(layer1_activations))
+                            output = self.policy.action_net(torch.tanh(layer2_activations))
+                            control_output = self.control.apply_state_controller(rollout_data.observations)
+                            mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
+                            mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
+                            mutual_info[2].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(output)))
+                            mutual_info[3].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(control_output)))
+                            mutual_info[4].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
+                            mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
+                            mutual_info[6].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
+                            mutual_info[7].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
+                            mutual_info[8].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
 
-                        if self.reference_agent is not None:
-                            reference_output = self.reference_agent.predict(rollout_data.observations)[0] #type: ignore
-                            mutual_info[9].append(ee.mi(tensor_to_numpy(entrada), reference_output)) 
-                            mutual_info[10].append(ee.mi(tensor_to_numpy(layer1_activations), reference_output)) 
-                            mutual_info[11].append(ee.mi(tensor_to_numpy(layer2_activations), reference_output)) 
-                            
-
-                        for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
-                            grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
-                            weights_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].clone().detach().norm().cpu().numpy())
+                            if self.reference_agent is not None:
+                                reference_output = self.reference_agent.predict(rollout_data.observations)[0] #type: ignore
+                                mutual_info[9].append(ee.mi(tensor_to_numpy(entrada), reference_output)) 
+                                mutual_info[10].append(ee.mi(tensor_to_numpy(layer1_activations), reference_output)) 
+                                mutual_info[11].append(ee.mi(tensor_to_numpy(layer2_activations), reference_output)) 
+                                
+                            for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                                grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
+                                weights_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].clone().detach().norm().cpu().numpy())
 
 
                 # Logs
-                with torch.no_grad():
-                    for i, medida in enumerate(mutual_info):
-                        self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
-                    self.logger.record("train/entropy_loss", np.mean(entropy_losses))
-                    self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
-                    self.logger.record("train/value_loss", np.mean(value_losses))
-                    self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
-                    self.logger.record("train/clip_fraction", np.mean(clip_fractions))
-                    self.logger.record("train/loss", loss.item())
-                    for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
-                        self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
-                        self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
-                    if hasattr(self.policy, "log_std"):
-                        self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
-                    self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-                    self.logger.record("train/clip_range", clip_range)
-                    if self.clip_range_vf is not None:
-                        self.logger.record("train/clip_range_vf", clip_range_vf)
+                if self.calc_mi:
+                    with torch.no_grad():
+                        for i, medida in enumerate(mutual_info):
+                            self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
+                        self.logger.record("train/entropy_loss", np.mean(entropy_losses))
+                        self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
+                        self.logger.record("train/value_loss", np.mean(value_losses))
+                        self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
+                        self.logger.record("train/clip_fraction", np.mean(clip_fractions))
+                        self.logger.record("train/loss", loss.item())
+                        for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                            self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
+                            self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
+                        if hasattr(self.policy, "log_std"):
+                            self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
+                        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+                        self.logger.record("train/clip_range", clip_range)
+                        if self.clip_range_vf is not None:
+                            self.logger.record("train/clip_range_vf", clip_range_vf)
 
-                # --- Início da seção modificada ---
-                # CSV writing
-                data = self.logger.name_to_value
-                df = pd.DataFrame(data, index=[0])
+                    # --- Início da seção modificada ---
+                    # CSV writing
+                    data = self.logger.name_to_value
+                    df = pd.DataFrame(data, index=[0])
 
-                df.to_csv(self.direc, mode='a' if os.path.exists(self.direc) else 'w', index=False, header= not os.path.exists(self.direc))
-                # --- Fim da seção modificada ---
+                    df.to_csv(self.direc, mode='a' if os.path.exists(self.direc) else 'w', index=False, header= not os.path.exists(self.direc))
+                    # --- Fim da seção modificada ---
                 
                 self._n_updates += 1
                 if not continue_training:
@@ -331,6 +354,7 @@ class Experimento():
         self.fib_seeds = fib(5)
         self.timesteps = int(1e3) #todo: atualizar isso depois
         self.reference_agent = None
+        self.calc_mi = False
 
         # Model Parameters
         self.learning_rate = 3e-4
@@ -362,17 +386,20 @@ class Experimento():
         self.recording_ep_freq = 100
         self.device = 'auto'
         self.coleta = False
-        #isso serve pra criar uma pasta com número maior sem perder a ordenação
-        if not os.path.exists('experimento/000'):
-            os.makedirs('experimento/000')
-            self.direc = 'experimento/000'
-        else:
-            self.direc = os.path.join('experimento', str(int(os.listdir('experimento')[-1]) + 1).zfill(3))
-            os.makedirs(self.direc)
-
-
         for chave, valor in params.items():
             setattr(self, chave, valor)
+        
+        #isso serve pra criar uma pasta com número maior sem perder a ordenação
+        if not os.path.exists(f'{self.direc}/000'):
+            os.makedirs(f'{self.direc}/000')
+            self.direc = f'{self.direc}/000'
+        else:
+            last_number = os.listdir(self.direc)[-1]
+            if last_number == 'plots':
+                last_number = os.listdir(self.direc)[-2]
+
+            self.direc = os.path.join(self.direc, str(int(last_number) + 1).zfill(3))
+            os.makedirs(self.direc)
 
         hyperparams = {
             'learning_rate': self.learning_rate,
@@ -400,16 +427,18 @@ class Experimento():
             'device': self.device
         }        
 
-        self.train_env = make_vec_env(self.env_id, n_envs= self.n_envs, seed=0, wrapper_class=Monitor)
-        if self.recording:
-            self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= os.path.join(self.direc, 'videos'), episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
-        
-        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, hyperparams) 
-    
-    def treinamento(self):
+        self.train_env = gymnasium.make(self.env_id)
+        if self.seed is not None:
+            self.train_env.reset(seed = self.seed[0])
+
+        # if self.recording: #! Está quebrado
+        #     self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= os.path.join(self.direc, 'videos'), episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
         #* Reprodutibilidade
         torch.manual_seed(0)
-
+        
+        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mi, hyperparams) 
+    
+    def treinamento(self):
         # Ambiente de treinamento
 
         seeds = self.fib_seeds

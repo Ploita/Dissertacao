@@ -1,5 +1,3 @@
-saved_agents/
-tensorboard_logs/
 *.pyc
 *.db
 *.json
@@ -8,5 +6,5 @@ tensorboard_logs/
 *.csv
 /NPEET
 *.jpg
-Dados_Teste_0/Plots/Grad_evolution.png
 *.pdf
+*.zip
