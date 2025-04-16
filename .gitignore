@@ -8,3 +8,4 @@
 *.jpg
 *.pdf
 *.zip
+/tensorboard_logs

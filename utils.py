@@ -9,15 +9,20 @@ from stable_baselines3.ppo import PPO
 from torch.nn import functional as F
 from typing import Union, Optional
 from pushbullet import Pushbullet
+import matplotlib.pyplot as plt
 from gymnasium import spaces
 from scipy import linalg
 import pandas as pd
 import numpy as np
 import gymnasium
+import itertools
 import keyboard
 import torch
+import copy 
 import json
 import os
+
+plt.style.use('style.mplstyle')
 
 # usar com o decorador @wrap_alerta
 def wrap_alerta(func):
@@ -166,15 +171,18 @@ class CustomCallback(BaseCallback):
         self.counter += 1
 
 class PPO_tunado(PPO):
-        def __init__(self, direc: str, policy: str, env: gymnasium.Env, ref_agent: Optional[str], calc_mi: bool, hparams: dict ):            
+        def __init__(self, direc: str, policy: str, env: gymnasium.Env, ref_agent: Optional[str], ref_control: Optional[Controller], calc_mi: bool, hparams: dict):            
             super().__init__(policy, env, **hparams)
             self.direc = os.path.join(direc, 'resultados.csv')
-            self.control = Controller(self.env.get_attr('env')[0]) #type: ignore
             self.calc_mi = calc_mi
+            self.reference_agent = None
+            self.control = None
+            self.rewards_list = []
             if ref_agent is not None:
                 temp_agent = PPO('MlpPolicy', env)
                 self.reference_agent = temp_agent.load(ref_agent)
-                
+            if ref_control is not None:
+                self.control = ref_control
             
         def train(self):
             """
@@ -198,10 +206,24 @@ class PPO_tunado(PPO):
             # train for n_epochs epochs
             for epoch in range(self.n_epochs):
                 approx_kl_divs = []
-                mutual_info = [[] for _ in range(12)]
-                grad_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
-                weights_info = [[] for _ in range(len(self.policy.optimizer.param_groups[0]['params']))]
+                layer_size = len(self.policy_kwargs['net_arch'])
+                measure_size = 2
+                if self.reference_agent is not None:
+                    measure_size = measure_size + 2
+                if self.control is not None:
+                    measure_size = measure_size + 2
+                mi_size = int((layer_size + measure_size)*(layer_size + 1)/2)
                 
+
+                mutual_info = [[] for _ in range(mi_size)]
+                actor_grad_info = [[] for _ in range(2*(layer_size + 1))]
+                critic_grad_info = [[] for _ in range(2*(layer_size + 1))]
+                actor_weights_info = [[] for _ in range(2*(layer_size + 1))]
+                critic_weights_info = [[] for _ in range(2*(layer_size + 1))]
+
+                grad_info = [[] for _ in range(4*(layer_size + 1))]
+                weights_info = [[] for _ in range(4*(layer_size + 1))]
+
                 # Do a complete pass on the rollout buffer
                 for rollout_data in self.rollout_buffer.get(self.batch_size):
                     actions = rollout_data.actions
@@ -284,63 +306,112 @@ class PPO_tunado(PPO):
                         with torch.no_grad():
                             entrada = self.policy.extract_features(rollout_data.observations)
                             assert (type(entrada) is torch.Tensor)
-                            layer1_activations = self.policy.mlp_extractor.policy_net[0](entrada)
-                            layer2_activations = self.policy.mlp_extractor.policy_net[2](torch.tanh(layer1_activations))
-                            output = self.policy.action_net(torch.tanh(layer2_activations))
-                            control_output = self.control.apply_state_controller(rollout_data.observations)
-                            mutual_info[0].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer1_activations)))
-                            mutual_info[1].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(layer2_activations)))
-                            mutual_info[2].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(output)))
-                            mutual_info[3].append(ee.mi(tensor_to_numpy(entrada), tensor_to_numpy(control_output)))
-                            mutual_info[4].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(layer2_activations)))
-                            mutual_info[5].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(output)))
-                            mutual_info[6].append(ee.mi(tensor_to_numpy(layer1_activations), tensor_to_numpy(control_output)))
-                            mutual_info[7].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(output)))
-                            mutual_info[8].append(ee.mi(tensor_to_numpy(layer2_activations), tensor_to_numpy(control_output)))
+                            
+                            # Ok, isso funciona para extrair as ativações intermediárias
+                            # favor não mexer
+                            x = entrada
+                            policy_activations = [x]
+                            for i, layer in enumerate(self.policy.mlp_extractor.policy_net):
+                                x = layer(x)
+                                if i % 2 == 1:  # A cada par de camadas (linear + ativação)
+                                    policy_activations.append(x)
 
+
+                            # action_activations = [entrada]
+                            # action_layers = [i for i in self.policy.mlp_extractor.value_net]
+                            # for i in np.arange(0,len(action_layers),2):
+                            #     action_activations.append(action_layers[i+1](action_layers[i](action_activations[int(i/2)])))
+                            
+                            # saídas para comparação
+                            layers = copy.copy(policy_activations)
+                            #saída da rede
+                            layers.append(self.policy.action_net(policy_activations[-1]))
+                            #saída de controle
+                            if self.control is not None:
+                                layers.append(self.control.apply_state_controller(rollout_data.observations))
+                            #saída do agente de referência
                             if self.reference_agent is not None:
-                                reference_output = self.reference_agent.predict(rollout_data.observations)[0] #type: ignore
-                                mutual_info[9].append(ee.mi(tensor_to_numpy(entrada), reference_output)) 
-                                mutual_info[10].append(ee.mi(tensor_to_numpy(layer1_activations), reference_output)) 
-                                mutual_info[11].append(ee.mi(tensor_to_numpy(layer2_activations), reference_output)) 
-                                
-                            for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                                layers.append(self.reference_agent.predict(rollout_data.observations)[0]) #type: ignore
+
+                            policy_activations = [tensor_to_numpy(i) for i in policy_activations]
+                            layers = [tensor_to_numpy(i) for i in layers]
+                            
+                            ite = 0
+                            for i, j in enumerate(policy_activations):
+                                for k in layers[i+1:]:
+                                    mutual_info[ite].append(ee.mi(j, k))
+                                    ite = ite + 1
+                                                            
+                            for i in range(layer_size + 1):
                                 grad_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].grad.clone().detach().norm().cpu().numpy())
                                 weights_info[i].append(self.policy.optimizer.param_groups[0]['params'][i].clone().detach().norm().cpu().numpy())
 
-
+                            # coletando os pesos e gradientes
+                            ## rede actor
+                            for i, j in enumerate((itertools.chain(self.policy.mlp_extractor.policy_net.named_parameters(), self.policy.action_net.named_parameters()))):
+                                actor_weights_info[i].append(j[1].clone().detach().norm().cpu().numpy()) 
+                                actor_grad_info[i].append(j[1].grad.clone().detach().norm().cpu().numpy()) #type: ignore
+                            
+                            ## rede critic
+                            for i, j in enumerate(itertools.chain(self.policy.mlp_extractor.value_net.named_parameters(), self.policy.value_net.named_parameters())):
+                                critic_weights_info[i].append(j[1].clone().detach().norm().cpu().numpy()) 
+                                critic_grad_info[i].append(j[1].grad.clone().detach().norm().cpu().numpy()) #type: ignore
                 # Logs
                 if self.calc_mi:
                     with torch.no_grad():
-                        for i, medida in enumerate(mutual_info):
-                            self.logger.record(f"train/mutual_info_{i}", np.mean(medida))
+                        vec1 = [f'h_{i+1}' for i in range(layer_size)]
+                        vec1.insert(0, 'X')
+                        vec2 = copy.copy(vec1)
+                        vec2.extend(['hat Y'])
+
+                        if self.control is not None:
+                            vec2.extend(['Y_c']) # type: ignore
+                        if self.reference_agent is not None:
+                            vec2.extend(['Y']) # type: ignore
+                        
+                        # todo checar pra ver se tá certo isso
+                        ite = 0
+                        for i, j in enumerate(vec1):
+                            for k in vec2[i+1:]:
+                                self.logger.record(f"train/I({j},{k})", np.mean(mutual_info[ite]))
+                                ite = ite + 1
+
                         self.logger.record("train/entropy_loss", np.mean(entropy_losses))
                         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
                         self.logger.record("train/value_loss", np.mean(value_losses))
                         self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
                         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
                         self.logger.record("train/loss", loss.item())
-                        for i in range(len(self.policy.optimizer.param_groups[0]['params'])):
+                        for i in range(2*(layer_size + 1)):
+                            self.logger.record(f"train/actor_weight_layer_{i}", np.mean(actor_weights_info[i]))
+                            self.logger.record(f"train/actor_grad_layer_{i}", np.mean(actor_grad_info[i]))
+                        
+                        for i in range(2*(layer_size + 1)):
+                            self.logger.record(f"train/critic_weight_layer_{i}", np.mean(critic_weights_info[i]))
+                            self.logger.record(f"train/critic_grad_layer_{i}", np.mean(critic_grad_info[i]))
+
+                        for i in range(layer_size + 1):
                             self.logger.record(f"train/gradient_layer_{i}", np.mean(grad_info[i]))
                             self.logger.record(f"train/weights_layer_{i}", np.mean(weights_info[i]))
                         if hasattr(self.policy, "log_std"):
                             self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
-                        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-                        self.logger.record("train/clip_range", clip_range)
+
                         if self.clip_range_vf is not None:
                             self.logger.record("train/clip_range_vf", clip_range_vf)
-
-                    # --- Início da seção modificada ---
+                    
                     # CSV writing
                     data = self.logger.name_to_value
                     df = pd.DataFrame(data, index=[0])
 
                     df.to_csv(self.direc, mode='a' if os.path.exists(self.direc) else 'w', index=False, header= not os.path.exists(self.direc))
-                    # --- Fim da seção modificada ---
                 
                 self._n_updates += 1
                 if not continue_training:
                     break
+            
+            #! ou vai quebrar o treinamento ou vai ser uma jogada de mestre
+            self.rewards_list.append(self.env.envs[0].get_episode_rewards()) #type: ignore
+            self.env.envs[0].episode_returns = [] #type: ignore
 
             explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
             self.logger.record("train/explained_variance", explained_var)
@@ -348,13 +419,15 @@ class PPO_tunado(PPO):
 class Experimento():
     
     def __init__(self, params) -> None:
+        # Setagem
         self.env_id = 'CartPole-v1'
         self.n_envs = 4
-        self.size = [64, 64]
         self.fib_seeds = fib(5)
-        self.timesteps = int(1e3) #todo: atualizar isso depois
+        self.timesteps = int(1e3) 
         self.reference_agent = None
+        self.controller = None
         self.calc_mi = False
+        self.control = False
 
         # Model Parameters
         self.learning_rate = 3e-4
@@ -375,7 +448,7 @@ class Experimento():
         self.rollout_buffer_kwargs = None
         self.target_kl = None
         self.stats_window_size = 100
-        self.tensorboard_log = None
+        self.tensorboard_log =  "./tensorboard_logs/"
         self.policy_kwargs = None
         self.verbose = 0
         self.seed = None
@@ -386,6 +459,8 @@ class Experimento():
         self.recording_ep_freq = 100
         self.device = 'auto'
         self.coleta = False
+        # Fim da setagem
+
         for chave, valor in params.items():
             setattr(self, chave, valor)
         
@@ -395,13 +470,11 @@ class Experimento():
             self.direc = f'{self.direc}/000'
         else:
             last_number = os.listdir(self.direc)[-1]
-            if last_number == 'plots':
-                last_number = os.listdir(self.direc)[-2]
 
             self.direc = os.path.join(self.direc, str(int(last_number) + 1).zfill(3))
             os.makedirs(self.direc)
 
-        hyperparams = {
+        self._hyperparams = {
             'learning_rate': self.learning_rate,
             'n_steps': self.n_steps,
             'batch_size': self.batch_size,
@@ -427,17 +500,50 @@ class Experimento():
             'device': self.device
         }        
 
-        self.train_env = gymnasium.make(self.env_id)
+        self.train_env = Monitor(gymnasium.make(self.env_id))
         if self.seed is not None:
             self.train_env.reset(seed = self.seed[0])
 
-        # if self.recording: #! Está quebrado
-        #     self.train_env = RecordVideo(self.train_env.get_attr('env')[0], video_folder= os.path.join(self.direc, 'videos'), episode_trigger= lambda x: x % self.recording_ep_freq == 0, disable_logger = True)
+        if self.control:
+            self.controller = Controller(self.env.get_attr('env')[0]) #type: ignore
+
         #* Reprodutibilidade
         torch.manual_seed(0)
         
-        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mi, hyperparams) 
+        self.model = PPO_tunado(self.direc, 'MlpPolicy', self.train_env, self.reference_agent, self.controller, self.calc_mi, self._hyperparams) 
     
+    def plots(self):
+        os.makedirs(f'{self.direc}/plots')
+        data = pd.read_csv(f'{self.direc}/resultados.csv')
+        col_info = {col: [item.strip() for item in col.strip('train/I()').split(',')] for col in data.columns}
+        combinacoes_sequenciais = []
+
+        for col1, info1 in col_info.items():
+            if len(info1) == 2:  # Certifica-se de que a coluna tem dois elementos (para ter um "segundo")
+                segundo_elemento_col1 = info1[1]
+                for col2, info2 in col_info.items():
+                    if col1 != col2 and len(info2) == 2:  # Evita comparar a mesma coluna e garante dois elementos
+                        primeiro_elemento_col2 = info2[0]
+                        if segundo_elemento_col1 == primeiro_elemento_col2:
+                            combinacoes_sequenciais.append((col1, col2))
+
+        if combinacoes_sequenciais:
+            print("Gerando plots para combinações sequenciais encontradas:")
+            for col1, col2 in combinacoes_sequenciais:
+                plt.scatter(data[col1], data[col2], c= np.arange(0, len(data[col1])), cmap= 'magma')
+                col1 = col1.strip('train/')
+                col2 = col2.strip('train/')
+                title = f'Relação ${col1}-{col2}$'
+                plt.xlabel(f'${col1}$')
+                plt.ylabel(f'${col2}$')
+                plt.title(title)
+                plt.colorbar(label='Epochs')
+                plt.tight_layout()
+                plt.savefig(f'{self.direc}/plots/{title.strip("$/$")}.pdf')
+                plt.show()
+        else:
+            print("Nenhuma combinação sequencial encontrada para plotar.")    
+
     def treinamento(self):
         # Ambiente de treinamento
 
@@ -454,6 +560,7 @@ class Experimento():
         with open(os.path.join(self.direc, 'hparams.json'), 'w') as arquivo:      
             arquivo.write(json_string)
 
+        self.plots()
         self.train_env.close()
 
     def visualizar_modelo(self):
