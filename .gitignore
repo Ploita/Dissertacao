@@ -1,8 +1,11 @@
-saved_agents/
-tensorboard_logs/
 *.pyc
 *.db
-optuna.db
-optuna.db
-*.db
-.vscode/settings.json
+*.json
+*.mp4
+*.txt
+*.csv
+/NPEET
+*.jpg
+*.pdf
+*.zip
+/tensorboard_logs

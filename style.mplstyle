@@ -1,0 +1,35 @@
+### Configurações de Fonte e Texto ###
+font.family         : sans-serif
+font.sans-serif     : Arial, DejaVu Sans, Helvetica
+font.size           : 18
+text.usetex         : False  # Desativar LaTeX se não for necessário
+
+### Tamanho e Layout ###
+figure.figsize      : 10.8,6.7 
+figure.dpi          : 100
+figure.autolayout   : True  # Ajusta automaticamente o layout
+
+### Eixos e Grid ###
+axes.titlesize      : 20  # Aumentado para 20
+axes.labelsize      : 18  # Aumentado para 18
+axes.grid           : False
+grid.alpha          : 0.3
+xtick.labelsize     : 14  # Aumentado para 14
+ytick.labelsize     : 14  # Aumentado para 14
+
+### Linhas e Marcadores ###
+lines.linewidth     : 2
+lines.markersize    : 6
+
+### Legenda ###
+legend.fontsize     : 11
+legend.framealpha   : 0.9
+legend.loc          : best
+
+### Cores (Ciclo Padrão) ###
+axes.prop_cycle : cycler(color=['006BA4', 'FF800E', 'ABABAB', '595959', '5F9ED1', 'C85200', '898989', 'A2C8EC', 'FFBC79', 'CFCFCF'])
+
+### Salvamento ###
+savefig.dpi         : 300
+savefig.bbox        : tight
+savefig.format      : pdf
