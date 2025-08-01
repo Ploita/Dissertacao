@@ -1,0 +1,14 @@
+*.pyc
+*.db
+*.json
+*.mp4
+*.txt
+*.csv
+/NPEET
+*.jpg
+*.pdf
+*.zip
+*.png
+/tensorboard_logs
+/runs
+/wandb

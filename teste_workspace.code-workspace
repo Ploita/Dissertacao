@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"name": "Dissertacao",
+			"path": "."
+		}
+	],
+	"settings": {
+		"jupyter.debugJustMyCode": true,
+		"debugpy.debugJustMyCode": true
+	}
+}
