@@ -1,14 +1,14 @@
-*.pyc
 *.db
 *.json
 *.mp4
 *.txt
 *.csv
-/NPEET
 *.jpg
 *.pdf
 *.zip
 *.png
+/__pycache__
+/NPEET
 /tensorboard_logs
 /runs
 /wandb

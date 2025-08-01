@@ -5,3 +5,7 @@ Estão presentes os códigos utilizados para busca de hiperparâmetros e treinam
 **Em andamento**
 
 Cada método foi implementado em sua própria branch.
+
+
+**Citação**
+Vai entrar um bib aqui, eventualmente.
