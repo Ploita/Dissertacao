@@ -1,14 +1,3 @@
-*.db
-*.json
-*.mp4
-*.txt
-*.csv
-*.jpg
-*.pdf
-*.zip
-*.png
-/__pycache__
-/NPEET
-/tensorboard_logs
-/runs
-/wandb
+\.venv
+\data
+\src\__pycache__

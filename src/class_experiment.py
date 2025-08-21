@@ -1,13 +1,12 @@
 from stable_baselines3.common.monitor import Monitor
-from matplotlib.cm import ScalarMappable
+from class_LQR_controller import Controller
 from matplotlib.colors import Normalize
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import gymnasium
-import keyboard
-import torch
+import torch 
 import json
 import os
 
@@ -15,18 +14,52 @@ from utils import CustomCallback, fib
 from class_ppo import PPO_tunado
 plt.style.use('style.mplstyle')
 
+def criar_pasta(directory: str):
+    if not os.path.exists(f'{directory}/000'):
+        os.makedirs(f'{directory}/000')
+        new_directory = f'{directory}/000'
+    else:
+        experiment_list = os.listdir(directory)
+        experiment_list.sort()
+        last_number = int(experiment_list[-1])
+        directory_number = last_number + 1
+        new_directory = os.path.join(directory, str(directory_number).zfill(3))
+        os.makedirs(new_directory)
+    return new_directory
+    
+def gera_combinacoes(col_info):
+    combinacoes_sequenciais = []
+    for col1, info1 in col_info.items():
+        if len(info1) == 2:  # Certifica-se de que a coluna tem dois elementos (para ter um "segundo")
+            segundo_elemento_col1 = info1[1]
+            for col2, info2 in col_info.items():
+                if col1 != col2 and len(info2) == 2:  # Evita comparar a mesma coluna e garante dois elementos
+                    primeiro_elemento_col2 = info2[0]
+                    if segundo_elemento_col1 == primeiro_elemento_col2:
+                        combinacoes_sequenciais.append((col1, col2))
+    return combinacoes_sequenciais
+
+def fechar_plot(directory, plot_name, axle_x = 'Norma', axle_y = 'Época'):
+    plt.ylabel(axle_x)
+    plt.xlabel(axle_y)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'{directory}/plots/{plot_name}.pdf')
+    plt.close()
+
 class Experimento():
     def __init__(self, params) -> None:
         # Setagem
         self.env_id = 'CartPole-v1'
         self.n_envs = 4
         self.policy_kwargs = dict(net_arch = [32,32])
-        self.fib_seeds = fib(5)
+        self.seeds = 0
         self.timesteps = int(1e3) 
         self.reference_agent = None
         self.controller = None
-        self.calc_mutual_info = False
+        self.calc_mutual_info = True
         self.reference_control = False
+        self.directory = '../data/results'
 
         # Model Parameters
         self.learning_rate = 3e-4
@@ -47,8 +80,7 @@ class Experimento():
         self.rollout_buffer_kwargs = None
         self.target_kl = None
         self.stats_window_size = 100
-        self.tensorboard_log =  "./tensorboard_logs/"
-        self.policy_kwargs = None
+        self.tensorboard_log =  "../data/tensorboard_logs/"
         self.verbose = 0
         self.seed = None
         self.device = "cpu"
@@ -56,22 +88,14 @@ class Experimento():
         # Recording Parameters
         self.recording = False
         self.recording_ep_freq = 100
-        self.device = 'auto'
         self.coleta = False
         # Fim da setagem
 
         for chave, valor in params.items():
             setattr(self, chave, valor)
         
-        #isso serve pra criar uma pasta com número maior sem perder a ordenação
-        if not os.path.exists(f'{self.directory}/000'):
-            os.makedirs(f'{self.directory}/000')
-            self.directory = f'{self.directory}/000'
-        else:
-            last_number = os.listdir(self.directory)[-1]
-
-            self.directory = os.path.join(self.directory, str(int(last_number) + 1).zfill(3))
-            os.makedirs(self.directory)
+        #criar uma pasta com número maior sem perder a ordenação
+        self.directory = criar_pasta(self.directory)
 
         self._hyperparams = {
             'learning_rate': self.learning_rate,
@@ -114,24 +138,22 @@ class Experimento():
     def plots(self):
         os.makedirs(f'{self.directory}/plots')
         data = pd.read_csv(f'{self.directory}/resultados.csv')
-        col_info = {col: [item.strip() for item in col.strip('train/I()').split(',')] for col in data.columns}
-        combinacoes_sequenciais = []
+        col_info = {col: [item.strip() for item in col.strip('I()').split(',')] for col in data.columns}
+        combinacoes_sequenciais = gera_combinacoes(col_info=col_info)
 
-        # loss + recompensa
-        fig, axs = plt.subplots(2, 1, figsize=(12, 10))
+        #%% loss
         loss_data = data.filter(like= 'loss')
-        loss_data.plot(title= 'Loss', ax=axs[0])  
-        axs[0].set_ylabel('Norma')
-        axs[0].set_xlabel('Época')
-        axs[0].legend()
-        axs[0].text(0.02,0.98,'a)', transform=axs[0].transAxes, va='top')
+        loss_data.plot()
+        fechar_plot(self.directory, 'loss')
+        
 
+        #%% recompensa
         data_to_plot = pd.read_csv(f'{self.directory}/rewards.csv')
         rewards = data_to_plot.T
         means = rewards.apply(np.mean)
         stds = rewards.apply(np.std)
-        axs[1].plot(means, label='Média', color='blue', marker='o')
-        axs[1].fill_between(
+        plt.plot(means, label='Média', color='blue', marker='o')
+        plt.fill_between(
             range(len(means)),          # Eixo x (iterações)
             np.array(means) - np.array(stds),  # Limite inferior
             np.array(means) + np.array(stds),  # Limite superior
@@ -139,143 +161,52 @@ class Experimento():
             color='blue',
             label='±1 Desvio Padrão'
         )
-        axs[1].set_xlabel('Iteração')
-        axs[1].set_ylabel('Recompensa')
-        axs[1].set_title('Distribuição das Recompensas por Iteração com Faixa de Desvio Padrão')
-        axs[1].legend()
-        axs[1].text(0.02,0.98,'b)', transform=axs[1].transAxes, va='top')
-        plt.tight_layout()
-        plt.savefig(f'{self.directory}/plots/loss+reward.pdf')
-        plt.close()
-
+        fechar_plot(self.directory, 'reward', 'Iteração', 'Recompensa')
                 
-        # pesos e gradiente
-        # ator
-        fig, axs = plt.subplots(2, 1, figsize=(12, 10))
-        data.filter(like = 'train/actor_weight').plot(ax=axs[0])
-        axs[0].set_xlabel('Época')
-        axs[0].set_ylabel('Norma')
-        axs[0].set_title('Evolução dos pesos')
-        axs[0].legend(loc = 'upper right')
-        axs[0].text(0.02,0.98,'a)', transform=axs[0].transAxes, va='top')
-
-
-        data.filter(like = 'train/actor_grad').plot(ax=axs[1])
-        axs[1].set_xlabel('Época')
-        axs[1].set_ylabel('Norma')
-        axs[1].set_title('Evolução do gradiente')
-        axs[1].legend(loc = 'upper right')
-        axs[1].text(0.02,0.98,'b)', transform=axs[1].transAxes, va='top')
-        plt.suptitle('Rede Ator')
-        plt.tight_layout()
-        plt.savefig(f'{self.directory}/plots/actor.pdf')
-        plt.close()
-
-        # ## critico
-        fig, axs = plt.subplots(2, 1, figsize=(12, 10))
-        data.filter(like = 'train/critic_weight').plot(ax=axs[0])
-        axs[0].set_xlabel('Época')
-        axs[0].set_ylabel('Norma')
-        axs[0].set_title('Evolução dos pesos')
-        axs[0].legend(loc = 'upper center')
-        axs[0].text(0.02,0.98,'a)', transform=axs[0].transAxes, va='top')
-
-
-        data.filter(like = 'train/critic_grad').plot(ax=axs[1])
-        axs[1].set_xlabel('Época')
-        axs[1].set_ylabel('Norma')
-        axs[1].set_title('Evolução do gradiente')
-        axs[1].legend()
-        axs[1].text(0.02,0.98,'b)', transform=axs[1].transAxes, va='top')
-        plt.suptitle('Rede Crítico')
-        plt.tight_layout()
-        plt.savefig(f'{self.directory}/plots/critic.pdf')
-        plt.close()
-
-        # informação mútua
-        for col1, info1 in col_info.items():
-            if len(info1) == 2:  # Certifica-se de que a coluna tem dois elementos (para ter um "segundo")
-                segundo_elemento_col1 = info1[1]
-                for col2, info2 in col_info.items():
-                    if col1 != col2 and len(info2) == 2:  # Evita comparar a mesma coluna e garante dois elementos
-                        primeiro_elemento_col2 = info2[0]
-                        if segundo_elemento_col1 == primeiro_elemento_col2:
-                            combinacoes_sequenciais.append((col1, col2))
-        size = len(data[combinacoes_sequenciais[0][0]])
-        norm = Normalize(vmin=0, vmax= size)
         
-        if len(combinacoes_sequenciais) == 4:
-            fig, axs = plt.subplots(2, 2, figsize=(12, 10))
-            axs = axs.ravel()  # Transforma em array 1D para facilitar iteração
-            subplot_labels = ['a)', 'b)', 'c)', 'd)']
-            for i in range(4):
-                col1 = combinacoes_sequenciais[i][0]
-                col2 = combinacoes_sequenciais[i][1]
-                axs[i].scatter(data[col1], data[col2],c= np.arange(0, size),cmap= 'magma',norm=norm)
-                col1 = col1.strip('train/')
-                col2 = col2.strip('train/').replace('hat', '\\hat')
-                title = f'Relação ${col1}\\times {col2}$'
-                axs[i].set_title(title)
-                axs[i].set_xlabel(f'${col1}$')
-                axs[i].set_ylabel(f'${col2}$')
-                axs[i].text(0.02, 0.98, subplot_labels[i], transform=axs[i].transAxes, va='top')
+        #%% ator - pesos e gradiente
+        data.filter(like = 'actor_weight').plot()
+        fechar_plot(self.directory, 'actor_weight')
 
-            cbar_ax = fig.add_axes([1, 0.05, 0.025, 0.895]) #type: ignore
-            fig.colorbar(
-                ScalarMappable(norm=norm, cmap='magma'),
-                orientation='vertical',
-                label='Épocas',
-                cax=cbar_ax)
-            plt.tight_layout()
-            plt.savefig(f'{self.directory}/plots/information_plots.pdf')
-            plt.close()
 
-        elif len(combinacoes_sequenciais) == 10:
-            fig, axs = plt.subplots(2, 2, figsize=(12, 10))
-            axs = axs.ravel()  # Transforma em array 1D para facilitar iteração
-            subplot_labels = ['a)', 'b)', 'c)', 'd)']
-            indice_vec = [5, 7,8,9]
-            for i, j in enumerate(indice_vec):
-                col1 = combinacoes_sequenciais[j][0]
-                col2 = combinacoes_sequenciais[j][1]
-                axs[i].scatter(data[col1], data[col2],c= np.arange(0, size),cmap= 'magma',norm=norm)
-                col1 = col1.strip('train/')
-                col2 = col2.strip('train/').replace('hat', '\\hat')
-                title = f'Relação ${col1}\\times {col2}$'
-                axs[i].set_title(title)
-                axs[i].set_xlabel(f'${col1}$')
-                axs[i].set_ylabel(f'${col2}$')
-                axs[i].text(0.02, 0.98, subplot_labels[i], transform=axs[i].transAxes, va='top')
+        data.filter(like = 'actor_grad').plot()
+        fechar_plot(self.directory, 'actor_grad')
 
-            cbar_ax = fig.add_axes([1, 0.05, 0.025, 0.895]) #type: ignore
-            fig.colorbar(
-                ScalarMappable(norm=norm, cmap='magma'),
-                orientation='vertical',
-                label='Épocas',
-                cax=cbar_ax)
-            plt.tight_layout()
-            plt.savefig(f'{self.directory}/plots/information_plots.pdf')
-            plt.close()
-            
-        else:
-            for col1, col2 in combinacoes_sequenciais:
-                val1 = data[col1] #data.groupby(data.index // self.n_steps)[col1].mean()
-                val2 = data[col2] #data.groupby(data.index // self.n_steps)[col2].mean()
-                plt.scatter(val1, val2, c= np.arange(0, len(data[col1])), cmap= 'magma')
-                col1 = col1.strip('train/')
-                col2 = col2.strip('train/')
-                title = f'Relação ${col1}\\times {col2}$'
-                plt.xlabel(f'${col1}$')
-                plt.ylabel(f'${col2}$')
-                plt.title(title)
-                plt.colorbar(label='Épocas')
-                plt.tight_layout()
-                plt.savefig(f'{self.directory}/plots/{title}.pdf')
-                plt.close()
+        #%% critico - pesos e gradiente
+        data.filter(like = 'critic_weight').plot()
+        fechar_plot(self.directory, 'critic_weight')
+        
+
+        data.filter(like = 'critic_grad').plot()
+        fechar_plot(self.directory, 'critic_grad')
+
+        #%% informação mútua
+        size = len(data[combinacoes_sequenciais[0][0]])
+        for col1, col2 in combinacoes_sequenciais:
+            val1 = data[col1] #data.groupby(data.index // self.n_steps)[col1].mean()
+            val2 = data[col2] #data.groupby(data.index // self.n_steps)[col2].mean()
+            plt.scatter(val1, val2, c= np.arange(0, len(data[col1])), cmap= 'magma')
+            col_x_name = col1.strip('').replace('hat', '\\hat')
+            col_y_name = col2.strip('').replace('hat', '\\hat')
+            title = f'Relação {col_x_name} x {col_y_name}'
+            fechar_plot(self.directory, title, f'${col_x_name}$', f'${col_y_name}$')
+        
+        #%% Colorbar
+        fig, ax = plt.subplots(figsize=(12, .5)) # Ajuste o tamanho para ser mais largo e fino
+    
+        norm = Normalize(vmin=0, vmax= size)
+        cmap = plt.get_cmap('magma')
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([]) # Adiciona um array vazio para o ScalarMappable
+        
+        cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
+        cbar.set_label('Épocas') # Ajuste a legenda conforme seus dados
+        plt.tight_layout()
+        plt.savefig(f'{self.directory}/plots/information_plots.pdf', bbox_inches='tight', dpi=300)
+        plt.close()
         
     def treinamento(self):
-        seeds = self.fib_seeds
-        for seed in tqdm(seeds, desc="Training with different seeds"):
+        for seed in tqdm(self.seeds, desc="Training with different seeds"):
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps= self.timesteps, progress_bar= True ,callback= CustomCallback(verbose=0, coleta = self.coleta, env_id= self.env_id, directory= self.directory))
         
@@ -294,56 +225,3 @@ class Experimento():
 
         self.plots()
         self.train_env.close()
-
-    def visualizar_modelo(self):
-        assert self.model is not None, 'Treine o modelo'
-        env = gymnasium.make(self.env_id, render_mode = 'human')
-        obs = env.reset()[0]
-        i = 0
-        seeds = fib(10)[-5:]
-        while i < 5:
-            self.model.set_random_seed(seeds[i])
-            action, _ = self.model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            if terminated or truncated:
-                obs, _ = env.reset()
-                i = i + 1
-            if keyboard.is_pressed('esc'):
-                break
-        env.close()
-
-    def coleta_dado(self, n: int):
-        assert self.model is not None
-        env = gymnasium.make('CartPole-v1')
-        dir = os.path.join(self.directory, 'dados.csv')
-        self.model.set_random_seed(0)   #* Reprodutibilidade 
-        seeds = fib(n)        #* Reprodutibilidade 
-
-        if os.path.exists(dir):
-            os.remove(dir)
-
-        for ite, seed in enumerate(seeds):
-            obs = env.reset(seed=seed)[0]   #* Reprodutibilidade 
-            done = False
-            i = 1
-            while not done:
-                tensor_obs = self.model.policy.obs_to_tensor(obs)[0]
-                action1 = self.model.policy.predict_values(tensor_obs)
-                action2 = self.model.policy.get_distribution(tensor_obs)
-                
-                action, _ = self.model.predict(obs)
-                obs, _, terminated, truncated, _ = env.step(action)
-                df = pd.DataFrame({
-                        'Iteração': ite,
-                        'Passo': i,
-                        'Posição': obs[0],
-                        'Velocidade': obs[1],
-                        'Ângulo': obs[2],
-                        'Velocidade Angular': obs[3],
-                        'Distribuição': action2.distribution.probs[0,0].detach().clone().cpu().numpy(), #type: ignore
-                        'Entropia': action2.distribution.entropy().detach().clone().cpu().numpy() #type: ignore
-                }, index=[0])
-                df.to_csv(dir, mode='a' if os.path.exists(dir) else 'w', index=False, header= not os.path.exists(dir))
-                done = terminated or truncated
-                i += 1
-            env.close()
