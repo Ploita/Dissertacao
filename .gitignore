@@ -1,3 +1,4 @@
 \.venv
-\data
+\data\results
+\data\tensorboard_logs
 \src\__pycache__
