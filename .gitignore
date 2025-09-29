@@ -1,4 +1,5 @@
-\.venv
-\data\results
-\data\tensorboard_logs
-\src\__pycache__
+.venv
+.vscode
+data
+doc
+src\__pycache__
