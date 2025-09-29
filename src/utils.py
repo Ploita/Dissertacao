@@ -1,37 +1,49 @@
 from stable_baselines3.common.callbacks import BaseCallback
-# from pushbullet import Pushbullet
+from pushbullet import Pushbullet
+import matplotlib.pyplot as plt
 import pandas as pd
 import gymnasium
 import torch
 import os
 
-# # usar com o decorador @wrap_alerta
-# def wrap_alerta(func):
-#     """função para alertar via pushbullet
-#     """
-#     def msg(key: int, f):
-#         with open('chave.txt', 'r') as arquivo:
-#             chave = arquivo.read()
-#             pb = Pushbullet(chave)
-#             title = 'Fim da execução!' if key == 1 else 'Deu ruim!'
-#             pb.push_note(title, f)        
+# usar com o decorador @wrap_alerta
+def wrap_alerta(func):
+    """função para alertar via pushbullet
+    """
+    def msg(key: int, f):
+        with open('chave.txt', 'r') as arquivo:
+            chave = arquivo.read()
+            pb = Pushbullet(chave)
+            title = 'Fim da execução!' if key == 1 else 'Deu ruim!'
+            pb.push_note(title, f)        
 
-#     def wrapper(*args, **kwargs):
-#         try:
-#             return func(*args, **kwargs)
-#         except Exception as e:
-#             msg(0, e)
-#         finally:
-#             msg(1,'cabou')
-#     return wrapper
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            msg(0, e)
+        finally:
+            msg(1,'cabou')
+    return wrapper
 
-# def alerta():
-#     with open('chave.txt', 'r') as arquivo:
-#         chave = arquivo.read()
-#         pb = Pushbullet(chave)
-#         title = 'Fim da execução!'
-#         pb.push_note(title, 'cabou') 
+def alerta():
+    with open('chave.txt', 'r') as arquivo:
+        chave = arquivo.read()
+        pb = Pushbullet(chave)
+        title = 'Fim da execução!'
+        pb.push_note(title, 'cabou') 
 
+def plotar(plot_name, type='latex', axle_x = 'Norma', axle_y = 'Época'):
+    tipo = 'pdf'
+    plt.ylabel(axle_x)
+    plt.xlabel(axle_y)
+    plt.legend()
+    plt.tight_layout()
+    if type != 'latex':    
+        tipo = 'jpg'
+        plt.title(plot_name)
+    plt.savefig(f'{plot_name}.{tipo}')
+    plt.close()
 
 def fib(n: int):
     """Gera os n primeiros números da sequência de Fibonacci utilizando um loop.

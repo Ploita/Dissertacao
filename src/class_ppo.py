@@ -61,22 +61,22 @@ class PPO_tunado(PPO):
         #%% logging additions
         layer_size = len(self.policy_kwargs['net_arch'])
         measure_size = 2
-        vec1 = [f'h_{i+1}' for i in range(layer_size)]
-        vec1.insert(0, 'X') 
-        vec2 = copy.copy(vec1)
-        vec2.extend(['hat Y'])
+        layer_names = [f'h_{i+1}' for i in range(layer_size)]
+        layer_names.insert(0, 'X') 
+        output_names = copy.copy(layer_names)
+        output_names.extend(['hat Y'])
         
         if self.reference_agent is not None:
             measure_size = measure_size + 2
-            vec2.extend(['Y']) # type: ignore
+            output_names.extend(['Y']) # type: ignore
         if self.reference_control is not None:
             measure_size = measure_size + 2
-            vec2.extend(['Y_c']) # type: ignore
+            output_names.extend(['Y_c']) # type: ignore
         
         mutual_info = {}
         ite = 0
-        for i, j in enumerate(vec1):
-            for k in vec2[i+1:]:
+        for i, j in enumerate(layer_names):
+            for k in output_names[i+1:]:
                 key = f"I({j},{k})"
                 mutual_info[key] = []  
                 ite += 1
@@ -100,21 +100,21 @@ class PPO_tunado(PPO):
                 'mutual_info': mutual_info,
                 'actor':{
                     'gradient': {key: [0] for key, _ in actor_net},
-                    'weights': {key: [value.detach().clone().norm().cpu().numpy()] for key, value in actor_net},
+                    'weights': {key: [value.norm().item()] for key, value in actor_net},
                     'grad_mean': {key: [0] for key, _ in actor_net},
                     'grad_std': {key: [0] for key, _ in actor_net}
                 },
                 'critic':{
                     'gradient': {key: [0] for key, _ in critic_net},
-                    'weights': {key: [value.detach().clone().norm().cpu().numpy()] for key, value in critic_net},
+                    'weights': {key: [value.norm().item()] for key, value in critic_net},
                     'grad_mean': {key: [0] for key, _ in critic_net},
                     'grad_std': {key: [0] for key, _ in critic_net}
                 }
             }
 
-            tensor_policy_activations = {key: torch.tensor(0) for key in vec1}
+            tensor_policy_activations = {}
             numpy_policy_activations = {}
-            tensor_layers = {key: torch.tensor(0) for key in vec2}
+            tensor_layers = {key: torch.tensor(0) for key in output_names}
             numpy_layers = {}
             approx_kl_divs = []
             # Do a complete pass on the rollout buffer
@@ -179,7 +179,7 @@ class PPO_tunado(PPO):
                 # and Schulman blog: http://joschu.net/blog/kl-approx.html
                 with torch.no_grad():
                     log_ratio = log_prob - rollout_data.old_log_prob
-                    approx_kl_div = torch.mean((torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+                    approx_kl_div = torch.mean((torch.exp(log_ratio) - 1) - log_ratio).item()
                     approx_kl_divs.append(approx_kl_div)
 
                 if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
@@ -198,7 +198,8 @@ class PPO_tunado(PPO):
                 if self.calc_mutual_info:
                     with torch.no_grad():
                         entrada = self.policy.extract_features(rollout_data.observations)
-                        assert (type(entrada) is torch.Tensor)
+                        if not isinstance(entrada, torch.Tensor):
+                            raise TypeError(f"Expected torch.Tensor, got {type(entrada)}")
                         
                         ite = 1
                         tensor_policy_activations['X'] = entrada
@@ -206,7 +207,7 @@ class PPO_tunado(PPO):
                         for i, layer in enumerate(self.policy.mlp_extractor.policy_net):
                             x = layer(x)
                             if i % 2 == 1:  # A cada par de camadas (linear + ativação)
-                                tensor_policy_activations[vec1[ite]] = x
+                                tensor_policy_activations[layer_names[ite]] = x
                                 ite = ite + 1
 
                         # todo: voltar pra adicionar isso aqui
@@ -238,20 +239,32 @@ class PPO_tunado(PPO):
                             key1, key2 = key.strip('I()').split(',')
                             metrics['mutual_info'][key].append(ee.mi(numpy_policy_activations[key1], numpy_layers[key2]))
 
-                        # todo: verifica se alterar a ordem clone, grad e detach afeta o resulta de MI
                         for key, value in actor_net:
-                            metrics['actor']['weights'][key].append(value.detach().clone().norm().cpu().numpy()) 
-                            metrics['actor']['gradient'][key].append(value.grad.detach().clone().norm().cpu().numpy()) #type: ignore
-                            metrics['actor']['grad_mean'][key].append(value.grad.detach().clone().mean().norm().cpu().numpy()) #type: ignore
-                            if key != 'bias':
-                                metrics['actor']['grad_std'][key].append(value.grad.detach().clone().std().cpu().numpy()) #type: ignore
+                            metrics['actor']['weights'][key].append(value.norm().item()) 
+                            if value.grad is not None:
+                                metrics['actor']['gradient'][key].append(value.grad.norm().item()) 
+                                metrics['actor']['grad_mean'][key].append(value.grad.mean().item())
+                                if value.grad.numel() > 1:
+                                    metrics['actor']['grad_std'][key].append(value.grad.std().item())
+                            else:
+                                metrics['actor']['gradient'][key].append(0.0) 
+                                metrics['actor']['grad_mean'][key].append(0.0)
+                                metrics['actor']['grad_std'][key].append(0.0)
                         
                         for key, value in critic_net:
-                            metrics['critic']['weights'][key].append(value.detach().clone().norm().cpu().numpy()) 
-                            metrics['critic']['gradient'][key].append(value.grad.detach().clone().norm().cpu().numpy()) #type: ignore
-                            metrics['critic']['grad_mean'][key].append(value.grad.detach().clone().mean().norm().cpu().numpy()) #type: ignore
-                            if key != 'bias':
-                                metrics['critic']['grad_std'][key].append(value.grad.detach().clone().std().cpu().numpy()) #type: ignore
+                            metrics['critic']['weights'][key].append(value.norm().item()) 
+                            if value.grad is not None:
+                                metrics['critic']['gradient'][key].append(value.grad.norm().item()) 
+                                metrics['critic']['grad_mean'][key].append(value.grad.mean().item())
+                                if value.grad.numel() > 1:
+                                    metrics['critic']['grad_std'][key].append(value.grad.std().item())
+                            else:
+                                metrics['critic']['gradient'][key].append(0.0) 
+                                metrics['critic']['grad_mean'][key].append(0.0)
+                                metrics['critic']['grad_std'][key].append(0.0)
+                                
+
+                            
                         
 
             # Logs

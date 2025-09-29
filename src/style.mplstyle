@@ -1,7 +1,7 @@
 ### Configurações de Fonte e Texto ###
 font.family         : sans-serif
 font.sans-serif     : Arial, DejaVu Sans, Helvetica
-font.size           : 18
+font.size           : 22
 text.usetex         : False  # Desativar LaTeX se não for necessário
 
 ### Tamanho e Layout ###
@@ -10,8 +10,8 @@ figure.dpi          : 100
 figure.autolayout   : True  # Ajusta automaticamente o layout
 
 ### Eixos e Grid ###
-axes.titlesize      : 20
-axes.labelsize      : 18
+axes.titlesize      : 24
+axes.labelsize      : 22
 axes.grid           : False
 grid.alpha          : 0.3
 xtick.labelsize     : 14

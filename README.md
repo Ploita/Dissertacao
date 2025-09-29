@@ -66,6 +66,7 @@ existe
 - [ ] Melhora da legibilidade
 - [ ] Coleta da IM das camadas do crítico
 - [ ] Adicionar um marcador de convergência (vou adicionar uma métrica no estilo 5% da amplitude total)
+- [ ] Gravar o treinamento
 
 ### Problemas de visualização
 - [ ] Alternativas para melhorar a visibilidade da evolução da IM (rollout maior? Menos épocas?)
