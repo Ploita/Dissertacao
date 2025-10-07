@@ -1,5 +1,5 @@
-.venv
-.vscode
-data
-doc
+.venv/
+.vscode/
+data/
+doc/
 src/__pycache__/

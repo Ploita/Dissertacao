@@ -65,8 +65,11 @@ existe
 
 - [ ] Melhora da legibilidade
 - [ ] Coleta da IM das camadas do crítico
-- [ ] Adicionar um marcador de convergência (vou adicionar uma métrica no estilo 5% da amplitude total)
+- [ ] Adicionar um marcador de convergência (adicionar uma métrica no estilo 5% da amplitude total?)
 - [ ] Gravar o treinamento
+- [ ] Implementação da paralelização (o esquema de `n_envs` não tá funcionando)
+- [ ] Verificar alternativas para inicialização da rede. Atualmente cada `enviroment` gera uma única rede independente da `seed` do ambiente. Bom para reprodução, mas pode ser um problema sobre a generalização.
+- [ ] Ajustar atualização e registro dos modelos. Usar a classe `PPO_tunado` acabou sobrescrevendo a opção de atualização de pesos do próprio modelo. Problema bônus, ao resolver isso verificar se essa ideia de usar múltiplas seeds em uma única inicialização (`np.arange(0,100)`) não vai ficar contaminada pela run anterior
 
 ### Problemas de visualização
 - [ ] Alternativas para melhorar a visibilidade da evolução da IM (rollout maior? Menos épocas?)

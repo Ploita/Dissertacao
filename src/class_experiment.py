@@ -1,5 +1,4 @@
 from stable_baselines3.common.monitor import Monitor
-from class_LQR_controller import Controller
 from matplotlib.colors import Normalize
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -11,7 +10,6 @@ import json
 import os
 import re
 
-from utils import CustomCallback
 from class_ppo import PPO_tunado
 plt.style.use('style.mplstyle')
 
@@ -81,9 +79,7 @@ class Experimento():
         self.seeds = [0]
         self.timesteps = int(1e3) 
         self.reference_agent = None
-        self.controller = None
         self.calc_mutual_info = True
-        self.reference_control = False
         self.directory = '../data/results'
 
         # Model Parameters
@@ -107,7 +103,7 @@ class Experimento():
         self.stats_window_size = 100
         self.tensorboard_log =  "../data/tensorboard_logs/"
         self.verbose = 0
-        self.seed = None
+        self.seed = 0
         self.device = "cpu"
         
         # Recording Parameters
@@ -144,21 +140,16 @@ class Experimento():
             'tensorboard_log': self.tensorboard_log,
             'policy_kwargs': self.policy_kwargs,
             'verbose': self.verbose,
-            'seed': self.seed,
             'device': self.device
         }        
 
         self.train_env = Monitor(gymnasium.make(self.env_id))
-        if self.seed is not None:
-            self.train_env.reset(seed = self.seed[0])
-
-        if self.reference_control:
-            self.controller = Controller(self.env.get_attr('env')[0]) #type: ignore
+        # self.train_env.reset(seed = self.seed)
 
         #* Reprodutibilidade
-        torch.manual_seed(0)
+        torch.manual_seed(1)
         
-        self.model = PPO_tunado(self.directory, 'MlpPolicy', self.train_env, self.reference_agent, self.controller, self.calc_mutual_info, self._hyperparams) 
+        self.model = PPO_tunado(self.directory, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mutual_info, self._hyperparams)
     
     def plots(self):
         os.makedirs(f'{self.directory}/plots')
@@ -232,24 +223,15 @@ class Experimento():
     def treinamento(self):
         for seed in tqdm(self.seeds, desc="Training with different seeds"):
             self.model.set_random_seed(seed)
-            self.model.learn(
-                total_timesteps= self.timesteps,
-                progress_bar= True,
-                callback= CustomCallback(
-                    verbose=0, 
-                    coleta = self.coleta, 
-                    env_id= self.env_id, 
-                    directory= self.directory
-                    )
-                )
+            temp2 = self.model.learn(total_timesteps= self.timesteps, progress_bar= False)
+            temp = 2
         
         # recompensa
         df = pd.DataFrame(self.model.rewards_list)
         rewards_directory = os.path.join(self.directory, 'rewards.csv')
         df.to_csv(rewards_directory, mode= 'w', index=False, header= True)    
 
-        if not self.recording:
-            self.model.save(os.path.join(self.directory, 'agente_treinado'))
+        self.model.save(os.path.join(self.directory, 'agente_treinado'))
 
         params = {chave: valor for chave, valor in self.__dict__.items() if not chave in ['train_env', 'model', '_hyperparams']}
         json_string = json.dumps(params, indent= 4)
