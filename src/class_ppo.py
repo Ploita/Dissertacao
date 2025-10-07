@@ -12,9 +12,6 @@ import torch
 import copy
 import os
 
-from class_LQR_controller import Controller
-from utils import tensor_to_numpy
-
 class PPO_tunado(PPO):
     def __init__(
             self, 
@@ -22,7 +19,6 @@ class PPO_tunado(PPO):
             policy: str, 
             env: gymnasium.Env, 
             ref_agent: Optional[str], 
-            ref_control: Optional[Controller], 
             calc_mutual_info: bool, 
             hparams: dict
             ):            
@@ -35,8 +31,6 @@ class PPO_tunado(PPO):
         if ref_agent is not None:
             temp_agent = PPO('MlpPolicy', env)
             self.reference_agent = temp_agent.load(ref_agent)
-        if ref_control is not None:
-            self.reference_control = ref_control
         
     def train(self):
         """
@@ -230,9 +224,9 @@ class PPO_tunado(PPO):
                             tensor_layers['Y'] = self.reference_agent.predict(rollout_data.observations)[0] #type: ignore
 
                         for key in tensor_policy_activations.keys():
-                            numpy_policy_activations[key] = tensor_to_numpy(tensor_policy_activations[key])
+                            numpy_policy_activations[key] = tensor_policy_activations[key].detach().cpu().numpy()
                         for key in tensor_layers.keys():
-                            numpy_layers[key] = tensor_to_numpy(tensor_layers[key])
+                            numpy_layers[key] = tensor_layers[key].detach().cpu().numpy()
                         
                         
                         for key in metrics['mutual_info']:
