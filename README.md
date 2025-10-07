@@ -65,7 +65,7 @@ existe
 
 - [ ] Melhora da legibilidade
 - [ ] Coleta da IM das camadas do crítico
-- [ ] Adicionar um marcador de convergência (vou adicionar uma métrica no estilo 5% da amplitude total)
+- [ ] Adicionar um marcador de convergência (adicionar uma métrica no estilo 5% da amplitude total?)
 - [ ] Gravar o treinamento
 - [ ] Implementação da paralelização (o esquema de `n_envs` não tá funcionando)
 - [ ] Verificar alternativas para inicialização da rede. Atualmente cada `enviroment` gera uma única rede independente da `seed` do ambiente. Bom para reprodução, mas pode ser um problema sobre a generalização.
