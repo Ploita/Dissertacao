@@ -290,7 +290,7 @@ def plot_rl_metrics(data_grouped, directory):
                     alpha=0.2,
                 )
         
-        fechar_plot(directory, metric_prefix, 'Época', info['ylabel'])
+        fechar_plot(directory, metric_prefix, 'Época', info['ylabel']) # type: ignore
 
 def plot_im(data: pd.DataFrame, directory: str):
     """
