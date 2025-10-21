@@ -27,7 +27,7 @@ def apply_latex_legend(col_name, type):
             latex_symbol = 'W' if symbol=='weight' else 'b'
             
             # Se não houver número de camada, assume-se que é a camada de saída (Out).
-            layer_base = int(int(layer)/2) if layer is not None else '\\text{Out}'
+            layer_base = int(layer)//2 if layer is not None else '\\text{Out}'
             
             # Base: W_i/W_Out ou b_i/b_Out
             latex_label = f'${latex_symbol_prefix}\\text{{{latex_symbol}}}_{{{layer_base}}}$'
