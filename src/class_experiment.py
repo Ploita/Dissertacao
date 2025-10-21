@@ -195,14 +195,14 @@ class Experimento():
                 # Modificado: A regex agora é mais flexível para capturar a camada (layer_N ou layer) e o separador.
                 # Captura: 'layer' + (opcionalmente '_N' ou ' N') + (opcionalmente '.' ou ' ') + (weight/bias)
                 # Matches layer parameter columns like 'layer_0_weight', 'layer.1.bias', 'layer 2 weight', 'layer3bias', or 'layer_weight'.
-                match = re.search(r'layer(?:[._\s](\d+))?(weight|bias)', col)
+                match = re.search(r'(actor|critic)[._\s]?(weight|grad)[._\s]?layer(?:[._\s](\d+))?.(weight|bias)', col)                
                 if match:
                     # group(1) é o número da camada (N), se existir. Será None para a camada de saída.
-                    layer_id = match.group(1) 
-                    param_type = match.group(2)
+                    layer_id = match.group(3) 
+                    param_type = match.group(4)
                     
                     # Se não houver número de camada, assume-se que é a camada de saída (Out).
-                    layer_label = layer_id if layer_id is not None else '\\text{Out}'
+                    layer_label = int(layer_id)//2 if layer_id is not None else '\\text{Out}'
                     
                     # Base: W_i/W_Out ou b_i/b_Out
                     latex_base = f'\\text{{W}}_{{{layer_label}}}' if param_type == 'weight' else f'\\text{{b}}_{{{layer_label}}}'
@@ -211,18 +211,18 @@ class Experimento():
                         # Para gradientes, adicionamos notação de norma, média ou desvio padrão
                         # O cabeçalho mostra 'mean', 'std' e sem sufixo (que é a norma ou o valor bruto)
                         if 'norm' in col:
-                            latex_label = f'$|\\nabla {latex_base}|$'
+                            latex_label = f'$\\nabla {latex_base}$'
                         elif 'mean' in col:
                             latex_label = f'$\\text{{Média}} (\\nabla {latex_base})$'
                         elif 'std' in col:
                             latex_label = f'$\\sigma (\\nabla {latex_base})$'
                         else:
                             # Fallback simples (Assume que o gradiente sem sufixo é a norma)
-                            latex_label = f'$|\\nabla {latex_base}|$'
+                            latex_label = f'$\\nabla {latex_base}$'
                     else: # weight
                         # Assumimos que qualquer coluna de peso sendo plotada para evolução é a sua magnitude (norma),
                         # pois os dados brutos ou a média/std dos pesos não são tipicamente plotados assim.
-                        latex_label = f'$|{latex_base}|$'
+                        latex_label = f'${latex_base}$'
                         
                     rename_map[col] = latex_label
             
