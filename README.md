@@ -61,20 +61,23 @@ existe
 
 
 
-# Melhorias previstas
+# To-do list
 
 - [ ] Melhora da legibilidade
-- [ ] Coleta da IM das camadas do crítico
+- [x] Coleta da IM das camadas do crítico
 - [ ] Adicionar um marcador de convergência (adicionar uma métrica no estilo 5% da amplitude total?)
 - [ ] Gravar o treinamento
 - [ ] Implementação da paralelização (o esquema de `n_envs` não tá funcionando)
-- [ ] Verificar alternativas para inicialização da rede. Atualmente cada `enviroment` gera uma única rede independente da `seed` do ambiente. Bom para reprodução, mas pode ser um problema sobre a generalização.
+- [ ] Verificar alternativas para inicialização da rede. Atualmente cada `enviroment` gera uma única rede independente da `seed` do ambiente. Bom para reprodução, mas pode ser um problema sobre a generalização
 - [ ] Ajustar atualização e registro dos modelos. Usar a classe `PPO_tunado` acabou sobrescrevendo a opção de atualização de pesos do próprio modelo. Problema bônus, ao resolver isso verificar se essa ideia de usar múltiplas seeds em uma única inicialização (`np.arange(0,100)`) não vai ficar contaminada pela run anterior
+- [ ] Verificar se o `device` pode acelerar o treinamento
+- [ ] Ajustar a questão do agente de referência para comparar o ator e crítico do agente em treinamento
 
 ### Problemas de visualização
 - [ ] Alternativas para melhorar a visibilidade da evolução da IM (rollout maior? Menos épocas?)
-- [ ] Ideias sobre como mostrar a evolução da IM em múltiplas seeds (são 4 elementos variando, se fizer um vídeo fica viável)
-- [ ] Verificar se os plots com desvio padrão (recompensa) estão sendo medidos de maneira correta
+- [x] Ideias sobre como mostrar a evolução da IM em múltiplas seeds (são 4 elementos variando, se fizer um vídeo fica viável)
+- [x] Verificar se os plots com desvio padrão (recompensa) estão sendo medidos de maneira correta
+- [x] Melhorar a legenda para viés e pesos de cada camada (sair de `actor_weight_layer_0.weight` pra `w_0` ou coisa similar)
 
 
 **Citação**
