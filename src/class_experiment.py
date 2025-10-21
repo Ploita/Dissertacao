@@ -254,6 +254,14 @@ class Experimento():
         
         # Suffix para colunas de peso (captura _weight, _layer, e opcionalmente _norm)
         # NOTA: O prefixo ^(actor|critic) foi removido
+        # Matches columns like:
+        #   actor_weight_layer_0_weight
+        #   actor_weight_layer_1_bias_norm
+        #   critic_weight_layer1_weight
+        #   actor_weight_layer_2_bias
+        # The pattern matches column names ending with:
+        #   '_weight' + optional separator + 'layer' + optional separator + optional layer number +
+        #   optional separator + 'weight' or 'bias' + optional '_norm' at the end.
         weight_regex_suffix = r'_weight[._\s]?layer(?:[._\s](\d+))?[._\s]?(weight|bias)(?:_norm)?$'
         
         # Suffix para colunas de gradiente (captura _grad, _layer, e opcionalmente _norm, _mean, _std)
