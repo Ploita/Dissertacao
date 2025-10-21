@@ -194,6 +194,7 @@ class Experimento():
             for col in data_frame.columns:
                 # Modificado: A regex agora é mais flexível para capturar a camada (layer_N ou layer) e o separador.
                 # Captura: 'layer' + (opcionalmente '_N' ou ' N') + (opcionalmente '.' ou ' ') + (weight/bias)
+                # Matches layer parameter columns like 'layer_0_weight', 'layer.1.bias', 'layer 2 weight', 'layer3bias', or 'layer_weight'.
                 match = re.search(r'layer(?:[._\s](\d+))?(weight|bias)', col)
                 if match:
                     # group(1) é o número da camada (N), se existir. Será None para a camada de saída.
