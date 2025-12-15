@@ -1,0 +1,38 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: >-
+  Analysis and Optimization Framework for DRL via
+  Information Theory
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Arthur
+    family-names: Fernandes
+    email: a257318@dac.unicamp.br
+    affiliation: University of Campinas (UNICAMP)
+    orcid: 'https://orcid.org/0000-0002-0971-5112'
+identifiers:
+  - type: url
+    value: 'https://repositorio.unicamp.br/acervo/detalhe/1522646'
+    description: >-
+      Master's Thesis: "Analysis of deep neural network
+      training in the reinforcement learning paradigm
+      through the information plane"
+repository-code: 'https://github.com/Ploita/Dissertacao'
+abstract: >-
+  This repository contains implementations for analyzing the
+  training dynamics of deep neural networks in Reinforcement
+  Learning (RL) using the Information Plane. It includes
+  tools for monitoring mutual information and, in future
+  versions, RL algorithms with correction factors based on
+  Information Theory.
+keywords:
+  - Reinforcement Learning
+  - Information Plane
+  - Information Theory
+  - Deep Learning
+license: MIT
