@@ -9,6 +9,7 @@ import torch
 import json
 import os
 import re
+import gc
 
 from class_ppo import PPO_tunado
 plt.style.use('style.mplstyle')
@@ -94,15 +95,70 @@ def combinar_strings(tupla_de_chaves_seguras: tuple[str, str]) -> str:
     return f'{"_".join(args_combinados_unicos)}'
 
 
-def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor'):
-    """Salva o plot em formato PDF e fecha."""
-    plt.xlabel(axle_x)
-    plt.ylabel(axle_y)
-    if plt.gca().get_legend_handles_labels()[0]:
-        plt.legend()
-    plt.tight_layout()
-    plt.savefig(f'{directory}/plots/{plot_name}.pdf')
-    plt.close()
+def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = None):
+    """Salva plot com zero vazamento de memória."""
+    import matplotlib.pyplot as plt
+    import gc
+    
+    try:
+        # Use o ax específico ou o atual
+        if ax is None:
+            ax = plt.gca()
+        
+        # Configurações
+        ax.set_xlabel(axle_x)
+        ax.set_ylabel(axle_y)
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend()
+        
+        fig = ax.get_figure()
+        
+        # Layout SEM bbox_inches='tight' (que causa vazamentos)
+        fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
+        
+        # Salva com configuração mínima
+        fig.savefig( #type: ignore
+            f'{directory}/plots/{plot_name}.pdf',
+            dpi=75,           # DPI menor = menos memória
+            format='pdf',
+            facecolor='white'
+            # SEM bbox_inches='tight' - causa vazamentos!
+        )
+        
+    finally:
+        # Cleanup AGRESSIVO e ESPECÍFICO
+        try:
+            # Limpa elementos do plot
+            if 'ax' in locals() and ax is not None:
+                ax.clear()
+                ax.remove()
+            
+            # Limpa figura
+            if 'fig' in locals() and fig is not None:
+                fig.clear()
+                plt.close(fig) #type: ignore
+            
+            # Deleta referências
+            for var in ['ax', 'fig', 'handles', 'labels']:
+                if var in locals():
+                    del locals()[var]
+        
+        except Exception:
+            pass
+        
+        # Cleanup matplotlib global
+        plt.close('all')
+        plt.clf()
+        plt.cla()
+        
+        # Força limpeza do backend
+        from matplotlib import _pylab_helpers
+        _pylab_helpers.Gcf.destroy_all()
+        
+        # Múltiplas coletas de lixo
+        for _ in range(2):
+            gc.collect()
 
 class Experimento():
     def __init__(self, params) -> None:
@@ -111,6 +167,7 @@ class Experimento():
         self.n_envs = 4
         self.policy_kwargs = dict(net_arch = [32,32])
         self.seeds = [0]
+        self.net_init = 1
         self.timesteps = int(1e3) 
         self.reference_agent = None
         self.calc_mutual_info = True
@@ -179,12 +236,13 @@ class Experimento():
         self.train_env = Monitor(gymnasium.make(self.env_id))
 
         #* Reprodutibilidade
-        torch.manual_seed(1)
+        torch.manual_seed(self.net_init)
         
         self.model = PPO_tunado(self.directory, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mutual_info, self._hyperparams)
     
-
     def plots(self):
+        plt.close('all')
+        
         os.makedirs(f'{self.directory}/plots', exist_ok=True)
         data = pd.read_csv(f'{self.directory}/resultados.csv')
         
@@ -230,14 +288,15 @@ class Experimento():
 
         # 1. Plots de Loss (inalterado)
         loss_data = data.filter(like='loss')
-        loss_data.plot()
-        fechar_plot(self.directory, 'loss', axle_x='Época', axle_y='Loss')
+        ax = loss_data.plot()
+        fechar_plot(self.directory, 'loss', axle_x='Época', axle_y='Loss', ax=ax)
         
         # 2. Plots de Recompensa (inalterado)
         data_to_plot = pd.read_csv(f'{self.directory}/rewards.csv')
         rewards = data_to_plot.T
         means = rewards.apply(np.mean)
         stds = rewards.apply(np.std)
+        _, ax = plt.subplots()
         plt.plot(means, label='Média', color='blue')
         plt.fill_between(
             range(len(means)),
@@ -247,7 +306,7 @@ class Experimento():
             color='blue',
             label='$\\pm 1$ Desvio Padrão'
         )
-        fechar_plot(self.directory, 'reward', 'Iteração', 'Recompensa')
+        fechar_plot(self.directory, 'reward', 'Iteração', 'Recompensa', ax)
         
         # 3. Plots de Pesos e Gradientes (COM REGEX REFORÇADO)
         
@@ -271,26 +330,26 @@ class Experimento():
         # Ator - Pesos
         actor_weight_data = data.filter(regex=r'^actor' + weight_regex_suffix)
         actor_weight_data = apply_latex_legend(actor_weight_data, 'weight')
-        actor_weight_data.plot()
-        fechar_plot(self.directory, 'actor_weight', axle_y='Magnitude dos Pesos')
+        ax = actor_weight_data.plot()
+        fechar_plot(self.directory, 'actor_weight', axle_y='Magnitude dos Pesos', ax= ax)
 
         # Ator - Gradientes
         actor_grad_data = data.filter(regex=r'^actor' + grad_regex_suffix)
         actor_grad_data = apply_latex_legend(actor_grad_data, 'grad')
-        actor_grad_data.plot()
-        fechar_plot(self.directory, 'actor_grad', axle_y='Magnitude dos Gradientes')
+        ax = actor_grad_data.plot()
+        fechar_plot(self.directory, 'actor_grad', axle_y='Magnitude dos Gradientes', ax= ax)
 
         # Crítico - Pesos
         critic_weight_data = data.filter(regex=r'^critic' + weight_regex_suffix)
         critic_weight_data = apply_latex_legend(critic_weight_data, 'weight')
-        critic_weight_data.plot()
-        fechar_plot(self.directory, 'critic_weight', axle_y='Magnitude dos Pesos')
+        ax = critic_weight_data.plot()
+        fechar_plot(self.directory, 'critic_weight', axle_y='Magnitude dos Pesos', ax= ax)
 
         # Crítico - Gradientes
         critic_grad_data = data.filter(regex=r'^critic' + grad_regex_suffix)
         critic_grad_data = apply_latex_legend(critic_grad_data, 'grad')
-        critic_grad_data.plot()
-        fechar_plot(self.directory, 'critic_grad', axle_y='Magnitude dos Gradientes')
+        ax = critic_grad_data.plot()
+        fechar_plot(self.directory, 'critic_grad', axle_y='Magnitude dos Gradientes', ax= ax)
 
         # 4. Plots de Informação Mútua (MI) - Inalterado, já usa LaTeX
         
@@ -300,7 +359,7 @@ class Experimento():
         combinacoes_sequenciais_seguras = gera_combinacoes(colunas_mi_seguras=actor_mi_cols) 
 
         # Definir a coluna de cor baseada no índice
-        size = len(data)
+        size = data.shape[0]
         color_col = np.arange(0, size)
 
         for prefix in ['actor', 'critic']:
@@ -319,7 +378,7 @@ class Experimento():
                 val1 = mi_data[col1_full_name]
                 val2 = mi_data[col2_full_name]
                     
-                plt.figure()
+                _, ax = plt.subplots()
                 plt.scatter(val1, val2, c=color_col, cmap='magma')
                 
                 # Cria a chave segura combinada para o nome do arquivo
@@ -342,7 +401,7 @@ class Experimento():
                 col_y_label_latex = f'${safe_to_latex(col2_safe)}$'
                 
                 # Nome do arquivo (usa a chave segura combinada)
-                fechar_plot(self.directory, f'{prefix}_{combined_safe_key}', col_x_label_latex, col_y_label_latex)
+                fechar_plot(self.directory, f'{prefix}_{combined_safe_key}', col_x_label_latex, col_y_label_latex, ax)
 
 
         # 5. Colorbar (inalterado, apenas garantindo que o `size` esteja correto)
@@ -354,11 +413,10 @@ class Experimento():
         
         cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
         cbar.set_label('Épocas')
-        plt.savefig(f'{self.directory}/plots/colorbar.pdf')
-        plt.close()
-        
+        fechar_plot(self.directory, 'colorbar', ax=ax)
+
     def treinamento(self):
-        for seed in tqdm(self.seeds, desc="Training with different seeds"):
+        for seed in self.seeds:
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps= self.timesteps, progress_bar= False)
         
@@ -377,3 +435,61 @@ class Experimento():
 
         self.plots()
         self.train_env.close()
+        
+        # plt.close('all')
+        gc.collect()
+        
+    def cleanup(self):
+        """Cleanup completo de todos os recursos"""
+        import gc        
+        # 1. Fecha e limpa o ambiente
+        if hasattr(self, 'train_env') and self.train_env is not None:
+            try:
+                self.train_env.close()
+            except:
+                pass
+            del self.train_env
+        
+        # 2. Limpa o modelo principal
+        if hasattr(self, 'model') and self.model is not None:
+            # Limpa componentes internos do modelo
+            if hasattr(self.model, 'rollout_buffer'):
+                del self.model.rollout_buffer
+            if hasattr(self.model, 'env'):
+                try:
+                    self.model.env.close() #type: ignore
+                except:
+                    pass
+            if hasattr(self.model, 'policy'):
+                del self.model.policy
+            if hasattr(self.model, '_last_obs'):
+                del self.model._last_obs
+            
+            del self.model
+        
+        # 3. Limpa o reference_agent (IMPORTANTE!)
+        if hasattr(self, 'reference_agent') and self.reference_agent is not None:
+            if hasattr(self.reference_agent, 'rollout_buffer'):
+                del self.reference_agent.rollout_buffer
+            if hasattr(self.reference_agent, 'policy'):
+                del self.reference_agent.policy
+            del self.reference_agent
+        
+        # 5. Limpa o __dict__ inteiro
+        attrs_to_keep = []  # Lista vazia = limpa tudo
+        for attr in list(self.__dict__.keys()):
+            if attr not in attrs_to_keep:
+                try:
+                    delattr(self, attr)
+                except:
+                    pass
+        
+        # 6. Força garbage collection
+        gc.collect()
+    
+    def __del__(self):
+        """Destrutor - garante cleanup"""
+        try:
+            self.cleanup()
+        except:
+            pass
