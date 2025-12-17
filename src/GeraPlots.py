@@ -5,7 +5,7 @@ import numpy as np
 import os
 import re
 
-plt.style.use('style.mplstyle')
+plt.style.use('src/style.mplstyle')
 
 def apply_latex_legend(col_name, type):
     
@@ -89,17 +89,40 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
                         
     return combinacoes_sequenciais
 
-def fechar_plot(directory, filename, xlabel='Época', ylabel='Valor'):
-    """Salva o gráfico atual e o fecha, garantindo o tight layout."""
-    plots_dir = os.path.join(directory, 'plots')
-    os.makedirs(plots_dir, exist_ok=True)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    if plt.gca().get_legend_handles_labels()[0]:
-        plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, f'{filename}.pdf'))
-    plt.close()
+def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = None):
+    """Salva plot com zero vazamento de memória."""    
+    if ax is None:
+        ax = plt.gca()
+        
+    # Configurações
+    ax.set_xlabel(axle_x)
+    ax.set_ylabel(axle_y)
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend()
+    
+    fig = ax.get_figure()
+    
+    # Layout SEM bbox_inches='tight' (que causa vazamentos)
+    fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
+    
+    # Salva com configuração mínima
+    fig.savefig( #type: ignore
+        f'{directory}/plots/{plot_name}.pdf',
+        dpi=75,           # DPI menor = menos memória
+        format='pdf',
+        facecolor='white'
+        # SEM bbox_inches='tight' - causa vazamentos!
+    )
+    
+    plt.close('all')
+    plt.clf()
+    plt.cla()
+        
+    # Força limpeza do backend
+    # from matplotlib import _pylab_helpers
+    # _pylab_helpers.Gcf.destroy_all()
+    
 
 def coletar_dados_experimentos(caminho_base):
     """
@@ -231,7 +254,7 @@ def plot_reward_mean_std(grouped_data, directory):
         color='blue',
     )
 
-    fechar_plot(directory, 'reward_mean_std', 'Iteração', 'Recompensa Média')
+    fechar_plot(directory, 'reward', 'Iteração', 'Recompensa Média')
 
 def plot_rl_metrics(data_grouped, directory):
     """
@@ -252,8 +275,6 @@ def plot_rl_metrics(data_grouped, directory):
     ])
 
     for metric_prefix, info in metric_map.items():
-        plt.figure(figsize=(10, 6))
-        
         plot_type = info['type']
         
         if info['components']:
@@ -268,6 +289,7 @@ def plot_rl_metrics(data_grouped, directory):
                 continue
             plot_list = all_means
 
+        _, ax = plt.subplots()
         for prefix in plot_list:
             mean_col = f'{prefix}_mean'
             std_col = f'{prefix}_std'
@@ -290,7 +312,7 @@ def plot_rl_metrics(data_grouped, directory):
                     alpha=0.2,
                 )
         
-        fechar_plot(directory, metric_prefix, 'Época', info['ylabel']) # type: ignore
+        fechar_plot(directory, metric_prefix, 'Época', info['ylabel'], ax=ax) #type: ignore
 
 def plot_im(data: pd.DataFrame, directory: str):
     """
@@ -331,7 +353,7 @@ def plot_im(data: pd.DataFrame, directory: str):
             val1 = mi_data[col1_full_name]
             val2 = mi_data[col2_full_name]
                     
-            plt.figure()
+            _, ax = plt.subplots()
             plt.scatter(val1, val2, c=color_col, cmap='magma', s= (8 + np.mean(mi_data[[col1_std, col2_std]]))**2 )
             
            # Cria a chave segura combinada para o nome do arquivo
@@ -351,7 +373,7 @@ def plot_im(data: pd.DataFrame, directory: str):
             col_y_label_latex = f'${safe_to_latex(col2_safe)}$'
             
             # Nome do arquivo (usa a chave segura combinada)
-            fechar_plot(f'{directory}', f'{prefix}_{combined_safe_key}', col_x_label_latex, col_y_label_latex)
+            fechar_plot(f'{directory}', f'{prefix}_{combined_safe_key}', col_x_label_latex, col_y_label_latex,ax=ax)
 
 
 def main_pipeline(root_directory):

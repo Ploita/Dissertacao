@@ -32,6 +32,7 @@ class PPO_tunado(PPO):
             temp_agent = PPO('MlpPolicy', env)
             self.reference_agent = temp_agent.load(ref_agent)
         
+    
     def train(self):
         """
         Update policy using the currently gathered rollout buffer.
@@ -123,18 +124,18 @@ class PPO_tunado(PPO):
         for epoch in range(self.n_epochs):
             metrics = {
                 'actor':{
-                    'mutual_info': {key: [0] for key in mutual_info.keys()}, # Usa chaves SEGURAS
-                    'gradient': {key: [0] for key, _ in actor_net},
+                    'mutual_info': {key: [] for key in mutual_info.keys()}, # Usa chaves SEGURAS
+                    'gradient': {key: [] for key, _ in actor_net},
                     'weights': {key: [value.norm().item()] for key, value in actor_net},
-                    'grad_mean': {key: [0] for key, _ in actor_net},
-                    'grad_std': {key: [0] for key, _ in actor_net}
+                    'grad_mean': {key: [] for key, _ in actor_net},
+                    'grad_std': {key: [] for key, _ in actor_net}
                 },
                 'critic':{
-                    'mutual_info': {key: [0] for key in mutual_info.keys()}, # Usa chaves SEGURAS
-                    'gradient': {key: [0] for key, _ in critic_net},
+                    'mutual_info': {key: [] for key in mutual_info.keys()}, # Usa chaves SEGURAS
+                    'gradient': {key: [] for key, _ in critic_net},
                     'weights': {key: [value.norm().item()] for key, value in critic_net},
-                    'grad_mean': {key: [0] for key, _ in critic_net},
-                    'grad_std': {key: [0] for key, _ in critic_net}
+                    'grad_mean': {key: [] for key, _ in critic_net},
+                    'grad_std': {key: [] for key, _ in critic_net}
                 }
             }
 
@@ -290,25 +291,15 @@ class PPO_tunado(PPO):
                             metrics['actor']['weights'][key].append(value.norm().item()) 
                             if value.grad is not None:
                                 metrics['actor']['gradient'][key].append(value.grad.norm().item()) 
-                                metrics['actor']['grad_mean'][key].append(value.grad.mean().item())
-                                if value.grad.numel() > 1:
-                                    metrics['actor']['grad_std'][key].append(value.grad.std().item())
                             else:
                                 metrics['actor']['gradient'][key].append(0.0) 
-                                metrics['actor']['grad_mean'][key].append(0.0)
-                                metrics['actor']['grad_std'][key].append(0.0)
                         
                         for key, value in critic_net:
                             metrics['critic']['weights'][key].append(value.norm().item()) 
                             if value.grad is not None:
                                 metrics['critic']['gradient'][key].append(value.grad.norm().item()) 
-                                metrics['critic']['grad_mean'][key].append(value.grad.mean().item())
-                                if value.grad.numel() > 1:
-                                    metrics['critic']['grad_std'][key].append(value.grad.std().item())
                             else:
                                 metrics['critic']['gradient'][key].append(0.0) 
-                                metrics['critic']['grad_mean'][key].append(0.0)
-                                metrics['critic']['grad_std'][key].append(0.0)
 
             # Logs
             if self.calc_mutual_info:
@@ -328,14 +319,10 @@ class PPO_tunado(PPO):
                     for key in metrics['actor']['gradient'].keys():
                         self.logger.record(f"actor_weight_layer_{key}", np.mean(metrics['actor']['weights'][key]))
                         self.logger.record(f"actor_grad_layer_{key}", np.mean(metrics['actor']['gradient'][key]))
-                        self.logger.record(f"actor_mean_grad_layer_{key}", np.mean(metrics['actor']['grad_mean'][key]))
-                        self.logger.record(f"actor_std_grad_layer_{key}", np.mean(metrics['actor']['grad_std'][key]))
-                    
+
                     for key in metrics['critic']['gradient'].keys():
                         self.logger.record(f"critic_weight_layer_{key}", np.mean(metrics['critic']['weights'][key]))
                         self.logger.record(f"critic_grad_layer_{key}", np.mean(metrics['critic']['gradient'][key]))
-                        self.logger.record(f"critic_mean_grad_layer_{key}", np.mean(metrics['critic']['grad_mean'][key]))
-                        self.logger.record(f"critic_std_grad_layer_{key}", np.mean(metrics['critic']['grad_std'][key]))
 
                     if hasattr(self.policy, "log_std"):
                         self.logger.record("policy_log_std", torch.exp(self.policy.log_std).mean().item())

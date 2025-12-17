@@ -82,4 +82,17 @@ existe
 
 **Citação**
 
-Vai entrar um bib aqui, eventualmente.
+Você pode citar este código utilizando minha [dissertação](https://repositorio.unicamp.br/acervo/detalhe/1522646) como:
+
+```
+@thesis{fernandes2025,
+	location = {Campinas, {SP}},
+	title = {Análise do treinamento de redes neurais profundas no paradigma de aprendizado por reforço através do plano de informação},
+	pagetotal = {93},
+	institution = {Universidade Estadual de Campinas},
+	type = {Dissertação (mestrado)},
+	author = {Fernandes, Arthur Felipe dos Santos},
+	date = {2025},
+    url = {https://repositorio.unicamp.br/acervo/detalhe/1522646},
+}
+```
