@@ -11,7 +11,6 @@ import itertools
 import torch
 import copy
 import os
-import gc
 
 class PPO_tunado(PPO):
     def __init__(
@@ -348,9 +347,3 @@ class PPO_tunado(PPO):
         
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
         self.logger.record("explained_variance", explained_var)
-
-        del df
-        del metrics
-        del network_activations
-        del mutual_info_mapping
-        gc.collect()

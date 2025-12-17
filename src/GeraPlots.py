@@ -5,7 +5,7 @@ import numpy as np
 import os
 import re
 
-plt.style.use('style.mplstyle')
+plt.style.use('src/style.mplstyle')
 
 def apply_latex_legend(col_name, type):
     
@@ -90,70 +90,39 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     return combinacoes_sequenciais
 
 def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = None):
-    """Salva plot com zero vazamento de memória."""
-    import matplotlib.pyplot as plt
-    import gc
+    """Salva plot com zero vazamento de memória."""    
+    if ax is None:
+        ax = plt.gca()
+        
+    # Configurações
+    ax.set_xlabel(axle_x)
+    ax.set_ylabel(axle_y)
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend()
     
-    try:
-        # Use o ax específico ou o atual
-        if ax is None:
-            ax = plt.gca()
+    fig = ax.get_figure()
+    
+    # Layout SEM bbox_inches='tight' (que causa vazamentos)
+    fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
+    
+    # Salva com configuração mínima
+    fig.savefig( #type: ignore
+        f'{directory}/plots/{plot_name}.pdf',
+        dpi=75,           # DPI menor = menos memória
+        format='pdf',
+        facecolor='white'
+        # SEM bbox_inches='tight' - causa vazamentos!
+    )
+    
+    plt.close('all')
+    plt.clf()
+    plt.cla()
         
-        # Configurações
-        ax.set_xlabel(axle_x)
-        ax.set_ylabel(axle_y)
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend()
-        
-        fig = ax.get_figure()
-        
-        # Layout SEM bbox_inches='tight' (que causa vazamentos)
-        fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
-        
-        # Salva com configuração mínima
-        fig.savefig( #type: ignore
-            f'{directory}/plots/{plot_name}.pdf',
-            dpi=75,           # DPI menor = menos memória
-            format='pdf',
-            facecolor='white'
-            # SEM bbox_inches='tight' - causa vazamentos!
-        )
-        
-    finally:
-        # Cleanup AGRESSIVO e ESPECÍFICO
-        try:
-            # Limpa elementos do plot
-            if 'ax' in locals() and ax is not None:
-                ax.clear()
-                ax.remove()
-            
-            # Limpa figura
-            if 'fig' in locals() and fig is not None:
-                fig.clear()
-                plt.close(fig) #type: ignore
-            
-            # Deleta referências
-            for var in ['ax', 'fig', 'handles', 'labels']:
-                if var in locals():
-                    del locals()[var]
-        
-        except Exception:
-            pass
-        
-        # Cleanup matplotlib global
-        plt.close('all')
-        plt.clf()
-        plt.cla()
-        
-        # Força limpeza do backend
-        from matplotlib import _pylab_helpers
-        _pylab_helpers.Gcf.destroy_all()
-        
-        # Múltiplas coletas de lixo
-        for _ in range(2):
-            gc.collect()
-
+    # Força limpeza do backend
+    # from matplotlib import _pylab_helpers
+    # _pylab_helpers.Gcf.destroy_all()
+    
 
 def coletar_dados_experimentos(caminho_base):
     """

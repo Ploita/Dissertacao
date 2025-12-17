@@ -1,7 +1,5 @@
 from class_experiment import Experimento
 from GeraPlots import main_pipeline
-import torch
-import gc
 
 num_neurons = 32
 env_id = 'CartPole-v1'
@@ -12,29 +10,26 @@ params = {
     'net_init': 2
 }
 
-enviroment_list = ['CartPole-v1']
+enviroment_list = [
+    # 'Acrobot-v1',
+    'BipedalWalker-v3',
+    # 'CarRacing-v3',
+    # 'CartPole-v1',
+    # 'MountainCar-v0',
+    # 'Pendulum-v1',
+    # 'MountainCarContinuous-v0',
+    # 'LunarLander-v3'
+]
 
-inits = [3]
+
 for enviroment in enviroment_list:
-    for init in inits:
+    for init in range(10):
         params['directory'] = f'data/groups/{enviroment}_{num_neurons}_{init}'
-        for seed in range(2):
+        for seed in range(20):
             params['seeds'] = [seed]
+            params['env_id'] = enviroment
+            params['net_init'] = init
             Ensaio = None  # Inicializa como None
-            try:
-                Ensaio = Experimento(params)
-                Ensaio.treinamento()
-            finally:
-                if Ensaio is not None:
-                    if hasattr(Ensaio, 'train_env'):
-                        Ensaio.train_env.close()
-                    if hasattr(Ensaio, 'model'):
-                        if hasattr(Ensaio.model, 'rollout_buffer'):
-                            del Ensaio.model.rollout_buffer
-                        del Ensaio.model
-                    del Ensaio
-                
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()            
+            Ensaio = Experimento(params)
+            Ensaio.treinamento()
         main_pipeline(params['directory'])
