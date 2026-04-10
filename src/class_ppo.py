@@ -20,7 +20,10 @@ class PPO_tunado(PPO):
             env: gymnasium.Env, 
             ref_agent: Optional[str], 
             calc_mutual_info: bool, 
-            hparams: dict
+            hparams: dict,
+            mi_beta_start: float = 0.0,
+            mi_beta_end: float = 0.0,
+            mi_beta_start_progress: float = 0.5
             ):            
         super().__init__(policy, env, **hparams)
         self.directory = os.path.join(directory, 'resultados.csv')
@@ -28,10 +31,27 @@ class PPO_tunado(PPO):
         self.reference_agent = None
         self.reference_control = None
         self.rewards_list = []
+        self.mi_beta_start = mi_beta_start
+        self.mi_beta_end = mi_beta_end
+        self.mi_beta_start_progress = mi_beta_start_progress
         if ref_agent is not None:
             temp_agent = PPO('MlpPolicy', env)
             self.reference_agent = temp_agent.load(ref_agent)
         
+    def _get_mi_beta(self) -> float:
+        """
+        Linear annealing for MI regularization based on training progress.
+        progress_remaining goes from 1.0 -> 0.0 during training.
+        The anneal starts only after mi_beta_start_progress is reached.
+        """
+        progress_done = 1.0 - float(self._current_progress_remaining)
+        start = float(self.mi_beta_start_progress)
+        if progress_done <= start:
+            return self.mi_beta_start
+        denom = max(1e-12, 1.0 - start)
+        anneal_t = min(1.0, (progress_done - start) / denom)
+        return self.mi_beta_start + anneal_t * (self.mi_beta_end - self.mi_beta_start)
+    
     
     def train(self):
         """
@@ -119,6 +139,72 @@ class PPO_tunado(PPO):
                 'numpy_layers': {}
             }
         }
+
+        def compute_mutual_info(rollout_data):
+            """
+            Calcula MI para ator e crítico usando as mesmas ativações já utilizadas no logging.
+            Retorna dicionários {key_safe: mi_value}.
+            """
+            with torch.no_grad():
+                entrada = self.policy.extract_features(rollout_data.observations)
+                if not isinstance(entrada, torch.Tensor):
+                    raise TypeError(f"Expected torch.Tensor, got {type(entrada)}")
+                
+                ite_raw_names = 1
+                network_activations['actor']['tensor_policy_activations']['X'] = entrada
+                
+                x = entrada
+                for i, layer1 in enumerate(self.policy.mlp_extractor.policy_net):
+                    x = layer1(x)
+                    if i % 2 == 1:  # A cada par de camadas (linear + ativação)
+                        network_activations['actor']['tensor_policy_activations'][layer_names_raw[ite_raw_names]] = x
+                        ite_raw_names += 1
+                
+                last_actor_activation = x
+                
+                ite_raw_names = 1
+                network_activations['critic']['tensor_policy_activations']['X'] = entrada
+                y = entrada
+                for i, layer2 in enumerate(self.policy.mlp_extractor.value_net):
+                    y = layer2(y)
+                    if i % 2 == 1:  # A cada par de camadas (linear + ativação)
+                        network_activations['critic']['tensor_policy_activations'][layer_names_raw[ite_raw_names]] = y
+                        ite_raw_names += 1
+                last_critic_activation = y
+
+                for key in network_activations['actor']['tensor_policy_activations'].keys():
+                    network_activations['actor']['tensor_layers'][key] = network_activations['actor']['tensor_policy_activations'][key]
+                    network_activations['critic']['tensor_layers'][key] = network_activations['critic']['tensor_policy_activations'][key]
+
+                # saídas para comparação
+                network_activations['actor']['tensor_layers']['hat Y'] = self.policy.action_net(last_actor_activation)
+                network_activations['critic']['tensor_layers']['hat Y'] = self.policy.value_net(last_critic_activation)
+                
+                if self.reference_agent is not None:
+                    network_activations['actor']['tensor_layers']['Y'] = torch.from_numpy(self.reference_agent.predict(rollout_data.observations)[0]).to(self.device) #type: ignore
+                    network_activations['critic']['tensor_layers']['Y'] = network_activations['actor']['tensor_layers']['Y']
+
+                for key in network_activations['actor']['tensor_policy_activations'].keys():
+                    network_activations['actor']['numpy_policy_activations'][key] = network_activations['actor']['tensor_policy_activations'][key].detach().cpu().numpy()
+                    network_activations['critic']['numpy_policy_activations'][key] = network_activations['critic']['tensor_policy_activations'][key].detach().cpu().numpy()
+                
+                for key in network_activations['actor']['tensor_layers'].keys():
+                    network_activations['actor']['numpy_layers'][key] = network_activations['actor']['tensor_layers'][key].detach().cpu().numpy()
+                    network_activations['critic']['numpy_layers'][key] = network_activations['critic']['tensor_layers'][key].detach().cpu().numpy()
+                
+                mi_actor = {}
+                mi_critic = {}
+                for key_safe, (raw1, raw2) in mutual_info_mapping.items():
+                    mi_actor[key_safe] = ee.mi(
+                        network_activations['actor']['numpy_policy_activations'][raw1],
+                        network_activations['actor']['numpy_layers'][raw2]
+                    )
+                    mi_critic[key_safe] = ee.mi(
+                        network_activations['critic']['numpy_policy_activations'][raw1],
+                        network_activations['critic']['numpy_layers'][raw2]
+                    )
+                
+                return mi_actor, mi_critic
         
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
@@ -195,7 +281,24 @@ class PPO_tunado(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+                base_loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+                
+                mi_actor_batch = {}
+                mi_critic_batch = {}
+                mi_penalty = 0.0
+                if self.calc_mutual_info:
+                    mi_actor_batch, mi_critic_batch = compute_mutual_info(rollout_data)
+                    mi_values = list(mi_actor_batch.values()) + list(mi_critic_batch.values())
+                    if mi_values:
+                        mi_penalty = float(np.mean(mi_values))
+                
+                mi_beta = self._get_mi_beta() if self.calc_mutual_info else 0.0
+                loss = (
+                    self.vf_coef * value_loss
+                    + policy_loss
+                    + self.ent_coef * entropy_loss
+                    + float(mi_beta) * torch.tensor(mi_penalty, device=self.device)
+                )
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
                 # and discussion in PR #419: https://github.com/DLR-RM/stable-baselines3/pull/419
@@ -219,73 +322,11 @@ class PPO_tunado(PPO):
                 self.policy.optimizer.step()
 
                 if self.calc_mutual_info:
-                    with torch.no_grad():
-                        entrada = self.policy.extract_features(rollout_data.observations)
-                        if not isinstance(entrada, torch.Tensor):
-                            raise TypeError(f"Expected torch.Tensor, got {type(entrada)}")
-                        
-                        ite_raw_names = 1
-                        network_activations['actor']['tensor_policy_activations']['X'] = entrada
-                        
-                        x = entrada
-                        for i, layer1 in enumerate(self.policy.mlp_extractor.policy_net):
-                            x = layer1(x)
-                            if i % 2 == 1:  # A cada par de camadas (linear + ativação)
-                                # Usa nomes RAW para armazenar
-                                network_activations['actor']['tensor_policy_activations'][layer_names_raw[ite_raw_names]] = x
-                                ite_raw_names += 1
-                        
-                        last_actor_activation = x
-                        
-                        ite_raw_names = 1
-                        network_activations['critic']['tensor_policy_activations']['X'] = entrada
-                        y = entrada
-                        for i, layer2 in enumerate(self.policy.mlp_extractor.value_net):
-                            y = layer2(y)
-                            if i % 2 == 1:  # A cada par de camadas (linear + ativação)
-                                # Usa nomes RAW para armazenar
-                                network_activations['critic']['tensor_policy_activations'][layer_names_raw[ite_raw_names]] = y
-                                ite_raw_names += 1
-                        last_critic_activation = y
-
-                        for key in network_activations['actor']['tensor_policy_activations'].keys():
-                            network_activations['actor']['tensor_layers'][key] = network_activations['actor']['tensor_policy_activations'][key]
-                            network_activations['critic']['tensor_layers'][key] = network_activations['critic']['tensor_policy_activations'][key]
-
-                        # saídas para comparação
-                        #saída da rede
-                        network_activations['actor']['tensor_layers']['hat Y'] = self.policy.action_net(last_actor_activation)
-                        network_activations['critic']['tensor_layers']['hat Y'] = self.policy.value_net(last_critic_activation)
-                        
-                        #saída do agente de referência
-                        if self.reference_agent is not None:
-                            network_activations['actor']['tensor_layers']['Y'] = torch.from_numpy(self.reference_agent.predict(rollout_data.observations)[0]).to(self.device) #type: ignore
-                            network_activations['critic']['tensor_layers']['Y'] = network_activations['actor']['tensor_layers']['Y'] # Cópia para o crítico
-
-                        for key in network_activations['actor']['tensor_policy_activations'].keys():
-                            network_activations['actor']['numpy_policy_activations'][key] = network_activations['actor']['tensor_policy_activations'][key].detach().cpu().numpy()
-                            network_activations['critic']['numpy_policy_activations'][key] = network_activations['critic']['tensor_policy_activations'][key].detach().cpu().numpy()
-                        
-                        for key in network_activations['actor']['tensor_layers'].keys():
-                            network_activations['actor']['numpy_layers'][key] = network_activations['actor']['tensor_layers'][key].detach().cpu().numpy()
-                            network_activations['critic']['numpy_layers'][key] = network_activations['critic']['tensor_layers'][key].detach().cpu().numpy()
-                        
-                        # CALCULA MI USANDO O MAPA SEGURO E AS CHAVES RAW PARA LOOKUP
-                        for key_safe, (raw1, raw2) in mutual_info_mapping.items():
-                            # O raw1 (X ou h_i) está em numpy_policy_activations.
-                            # O raw2 (h_j, hat Y ou Y) está em numpy_layers.
-                            
-                            # Actor MI
-                            metrics['actor']['mutual_info'][key_safe].append(ee.mi(
-                                network_activations['actor']['numpy_policy_activations'][raw1],
-                                network_activations['actor']['numpy_layers'][raw2]
-                                ))
-                            
-                            # Critic MI
-                            metrics['critic']['mutual_info'][key_safe].append(ee.mi(
-                                network_activations['critic']['numpy_policy_activations'][raw1],
-                                network_activations['critic']['numpy_layers'][raw2]
-                                ))
+                    for key_safe, value in mi_actor_batch.items():
+                        metrics['actor']['mutual_info'][key_safe].append(value)
+                    
+                    for key_safe, value in mi_critic_batch.items():
+                        metrics['critic']['mutual_info'][key_safe].append(value)
 
                         for key, value in actor_net:
                             metrics['actor']['weights'][key].append(value.norm().item()) 
@@ -315,7 +356,10 @@ class PPO_tunado(PPO):
                     self.logger.record("value_loss", np.mean(value_losses))
                     self.logger.record("approx_kl", np.mean(approx_kl_divs))
                     self.logger.record("clip_fraction", np.mean(clip_fractions))
-                    self.logger.record("loss", loss.item())
+                    self.logger.record("loss", base_loss.item())
+                    self.logger.record("loss_with_mi", loss.item())
+                    self.logger.record("mi_beta", mi_beta)
+                    self.logger.record("mi_penalty", mi_penalty)
                     for key in metrics['actor']['gradient'].keys():
                         self.logger.record(f"actor_weight_layer_{key}", np.mean(metrics['actor']['weights'][key]))
                         self.logger.record(f"actor_grad_layer_{key}", np.mean(metrics['actor']['gradient'][key]))

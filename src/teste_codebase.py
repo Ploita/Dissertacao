@@ -12,18 +12,18 @@ params = {
 
 enviroment_list = [
     # 'Acrobot-v1',
-    'BipedalWalker-v3',
-    # 'CarRacing-v3',
-    # 'CartPole-v1',
-    # 'MountainCar-v0',
-    # 'Pendulum-v1',
-    # 'MountainCarContinuous-v0',
-    # 'LunarLander-v3'
+    # 'BipedalWalker-v3',
+    'CarRacing-v3',
+    'CartPole-v1',
+    'MountainCar-v0',
+    'Pendulum-v1',
+    'MountainCarContinuous-v0',
+    'LunarLander-v3'
 ]
 
 
 for enviroment in enviroment_list:
-    for init in range(10):
+    for init in range(5):
         params['directory'] = f'data/groups/{enviroment}_{num_neurons}_{init}'
         for seed in range(20):
             params['seeds'] = [seed]
