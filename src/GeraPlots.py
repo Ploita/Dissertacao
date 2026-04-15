@@ -419,3 +419,5 @@ def main_pipeline(root_directory):
         print(f"\nAviso: Diretório de recompensas {root_directory} não encontrado. Pulando plotagem de Recompensa.")
     except Exception as e:
         print(f"\nOcorreu um erro ao processar plots de Recompensa: {e}")
+
+main_pipeline('/home/ploita/Downloads/Cartpole_[32,32]')
