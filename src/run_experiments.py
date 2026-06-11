@@ -1,16 +1,16 @@
 from class_experiment import Experimento
-from GeraPlots import main_pipeline
+from post_processing import main_pipeline
 
 num_neurons = 32
 env_id = 'CartPole-v1'
 params = {
     'policy_kwargs': dict(net_arch=[num_neurons, num_neurons]),
-    'timesteps': int(1e6),
+    'timesteps': int(1e5),
     'directory': f'data/groups/{env_id}_{num_neurons}',
     'net_init': 2
 }
 
-enviroment_list = [
+environment_list = [
     # 'Acrobot-v1',
     'BipedalWalker-v3',
     # 'CarRacing-v3',
@@ -22,14 +22,15 @@ enviroment_list = [
 ]
 
 
-for enviroment in enviroment_list:
-    for init in range(10):
-        params['directory'] = f'data/groups/{enviroment}_{num_neurons}_{init}'
-        for seed in range(20):
+for environment in environment_list:
+    for init in range(2):
+        # todo melhorar essa nomeação
+        params['directory'] = 'data/test/A0'
+        for seed in range(1):
             params['seeds'] = [seed]
-            params['env_id'] = enviroment
+            params['env_id'] = environment
             params['net_init'] = init
-            Ensaio = None  # Inicializa como None
-            Ensaio = Experimento(params)
-            Ensaio.treinamento()
+            ensaio = None  # Inicializa como None
+            ensaio = Experimento(params)
+            ensaio.treinamento()
         main_pipeline(params['directory'])

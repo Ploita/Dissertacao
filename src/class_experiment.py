@@ -1,15 +1,17 @@
-from stable_baselines3.common.monitor import Monitor
-from matplotlib.colors import Normalize
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-import gymnasium
-import torch 
 import json
 import os
 import re
 
+import gymnasium
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from matplotlib.colors import Normalize
+from stable_baselines3.common.monitor import Monitor
+
 from class_ppo import PPO_tunado
+
 plt.style.use('src/style.mplstyle')
 
 def criar_pasta(directory: str) -> str:
@@ -39,20 +41,20 @@ def criar_pasta(directory: str) -> str:
 def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     """
     Gera combinações sequenciais de MI (ex: I_A_B e I_B_C).
-    
-    A entrada agora é uma lista de strings de chaves seguras (ex: ['actor_I_X_h1', 'actor_I_h1_h2', ...]).
-    A saída são tuplas de chaves seguras, mas sem o prefixo (ex: ('I_X_h1', 'I_h1_h2')).
+
+    A entrada agora é uma lista de strings de chaves seguras (ex: ['actor_I_X_h1']).
+    A saída são tuplas de chaves seguras, mas sem o prefixo (ex: ('I_X_h1')).
     """
     combinacoes_sequenciais = []
-    
+
     # Mapeia a chave de MI segura (sem prefixo) para seus componentes (A, B)
     stripped_info = {}
-    
+
     # 1. Extrair os componentes (A, B) de cada chave (I_A_B)
     for col_full in colunas_mi_seguras:
         # Remove o prefixo 'actor_' ou 'critic_'
         col_safe = col_full.split('_', 1)[1] # Ex: 'I_X_h1'
-        
+
         # O split pega a primeira letra 'I' e os dois componentes 'X' e 'h1'
         parts = col_safe.split('_')
         if len(parts) == 3 and parts[0] == 'I':
@@ -65,51 +67,100 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
             for col2_safe, info2 in stripped_info.items():
                 if col1_safe != col2_safe and len(info2) == 2:
                     primeiro_elemento_col2 = info2[0] # O 'B'
-                    
+
                     # Encontrou a sequência: I_A_B seguido de I_B_C
                     if segundo_elemento_col1 == primeiro_elemento_col2:
                         combinacoes_sequenciais.append((col1_safe, col2_safe))
-                        
+
     return combinacoes_sequenciais
 
 def combinar_strings(tupla_de_chaves_seguras: tuple[str, str]) -> str:
     """
     Combina duas chaves seguras do tipo I_A_B e I_B_C em uma chave de plot I_A_B_C.
-    
     Ex: ('I_X_h1', 'I_h1_h2') -> 'I_X_h1_h2' (chave segura para nome de arquivo)
     """
     primeira = tupla_de_chaves_seguras[0] # Ex: 'I_X_h1'
     segunda = tupla_de_chaves_seguras[1] # Ex: 'I_h1_h2'
-    
+
     # Remove o 'I_' do começo
     args_primeira_str = primeira[2:] # Ex: 'X_h1'
     args_segunda_str = segunda[2:]   # Ex: 'h1_h2'
-    
+
     lista_args = args_primeira_str.split('_') + args_segunda_str.split('_')
     # Mantém apenas os elementos únicos na ordem de ocorrência (X, h1, h2)
     args_combinados_unicos = list(dict.fromkeys(lista_args))
-    
+
     # Retorna o nome seguro combinado: I_X_h1_h2
     return f'{"_".join(args_combinados_unicos)}'
 
+# Função auxiliar local para renomear colunas para LaTeX para plots de pesos/gradientes
+def apply_latex_legend(data_frame: pd.DataFrame, component_type: str) -> pd.DataFrame:
+    rename_map = {}
+    for col in data_frame.columns:
+        match = re.search(
+            r"(actor|critic)[._\s]?(weight|grad)[._\s]?"
+            r"layer(?:[._\s](\d+))?.(weight|bias)",
+            col,
+        )
+        if match:
+            # group(1) é o número da camada (N), se existir. Será None para a camada de saída.
+            layer_id = match.group(3)
+            param_type = match.group(4)
+
+            # Se não houver número de camada, assume-se que é a camada de saída (Out).
+            layer_label = int(layer_id)//2 if layer_id is not None else '\\text{Out}'
+
+            # Base: W_i/W_Out ou b_i/b_Out
+            if param_type == "weight":
+                latex_base = f"\\text{{W}}_{{{layer_label}}}"
+            else:
+                latex_base = f"\\text{{b}}_{{{layer_label}}}"
+
+            if component_type == 'grad':
+                # Para gradientes, adicionamos notação de norma, média ou desvio padrão
+                # O cabeçalho mostra 'mean', 'std' e sem sufixo (que é a norma ou o valor bruto)
+                if 'norm' in col:
+                    latex_label = f'$\\nabla {latex_base}$'
+                elif 'mean' in col:
+                    latex_label = f'$\\text{{Média}} (\\nabla {latex_base})$'
+                elif 'std' in col:
+                    latex_label = f'$\\sigma (\\nabla {latex_base})$'
+                else:
+                    # Fallback simples (Assume que o gradiente sem sufixo é a norma)
+                    latex_label = f'$\\nabla {latex_base}$'
+            else: # weight
+                latex_label = f'${latex_base}$'
+
+            rename_map[col] = latex_label
+
+    return data_frame.rename(columns=rename_map)
+
+def safe_to_latex(safe_key: str) -> str:
+    key = safe_key.replace('I_', '').replace('_', ',')
+    # Troca h1 por h_1, etc. (se houver mais de um dígito, o regex segura)
+    key = re.sub(r'(h)(\d+)', r'h_{\2}', key)
+    key = key.replace('Yhat', '\\hat{Y}')
+    # Y_ref deve ser Y no plot
+    key = key.replace('Y_ref', 'Y')
+    return f'I({key})'
 
 def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = None):
     """Salva plot com zero vazamento de memória."""
     if ax is None:
         ax = plt.gca()
-        
+
     # Configurações
     ax.set_xlabel(axle_x)
     ax.set_ylabel(axle_y)
     handles, labels = ax.get_legend_handles_labels()
     if handles:
         ax.legend()
-    
+
     fig = ax.get_figure()
-    
+
     # Layout SEM bbox_inches='tight' (que causa vazamentos)
     fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
-    
+
     # Salva com configuração mínima
     fig.savefig( #type: ignore
         f'{directory}/plots/{plot_name}.pdf',
@@ -118,12 +169,12 @@ def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = 
         facecolor='white'
         # SEM bbox_inches='tight' - causa vazamentos!
     )
-    
+
 
     plt.close('all')
     plt.clf()
     plt.cla()
-    
+
     # from matplotlib import _pylab_helpers
     # _pylab_helpers.Gcf.destroy_all()
 
@@ -136,7 +187,7 @@ class Experimento():
         self.policy_kwargs = dict(net_arch = [32,32])
         self.seeds = [0]
         self.net_init = 1
-        self.timesteps = int(1e3) 
+        self.timesteps = int(1e3)
         self.reference_agent = None
         self.calc_mutual_info = True
         self.directory = '../data/results'
@@ -163,7 +214,7 @@ class Experimento():
         # self.tensorboard_log =  "../data/tensorboard_logs/"
         self.verbose = 0
         self.device = "cpu"
-        
+
         # Recording Parameters
         self.recording = False
         self.recording_ep_freq = 100
@@ -172,7 +223,7 @@ class Experimento():
 
         for chave, valor in params.items():
             setattr(self, chave, valor)
-        
+
         #criar uma pasta com número maior sem perder a ordenação
         self.directory = criar_pasta(self.directory)
 
@@ -199,66 +250,34 @@ class Experimento():
             'policy_kwargs': self.policy_kwargs,
             'verbose': self.verbose,
             'device': self.device
-        }        
+        }
 
         self.train_env = Monitor(gymnasium.make(self.env_id))
 
         #* Reprodutibilidade
         torch.manual_seed(self.net_init)
-        
-        self.model = PPO_tunado(self.directory, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mutual_info, self._hyperparams)
-    
+
+        self.model = PPO_tunado(
+            self.directory,
+            'MlpPolicy',
+            self.train_env,
+            self.reference_agent,
+            self.calc_mutual_info,
+            self._hyperparams
+            )
+
     def plots(self):
         plt.close('all')
-        
+
         os.makedirs(f'{self.directory}/plots', exist_ok=True)
         data = pd.read_csv(f'{self.directory}/resultados.csv')
-        
-        # Função auxiliar local para renomear colunas para LaTeX para plots de pesos/gradientes
-        def apply_latex_legend(data_frame: pd.DataFrame, component_type: str) -> pd.DataFrame:
-            rename_map = {}
-            for col in data_frame.columns:
-                # Modificado: A regex agora é mais flexível para capturar a camada (layer_N ou layer) e o separador.
-                # Captura: 'layer' + (opcionalmente '_N' ou ' N') + (opcionalmente '.' ou ' ') + (weight/bias)
-                # Matches layer parameter columns like 'layer_0_weight', 'layer.1.bias', 'layer 2 weight', 'layer3bias', or 'layer_weight'.
-                match = re.search(r'(actor|critic)[._\s]?(weight|grad)[._\s]?layer(?:[._\s](\d+))?.(weight|bias)', col)                
-                if match:
-                    # group(1) é o número da camada (N), se existir. Será None para a camada de saída.
-                    layer_id = match.group(3) 
-                    param_type = match.group(4)
-                    
-                    # Se não houver número de camada, assume-se que é a camada de saída (Out).
-                    layer_label = int(layer_id)//2 if layer_id is not None else '\\text{Out}'
-                    
-                    # Base: W_i/W_Out ou b_i/b_Out
-                    latex_base = f'\\text{{W}}_{{{layer_label}}}' if param_type == 'weight' else f'\\text{{b}}_{{{layer_label}}}'
-                    
-                    if component_type == 'grad':
-                        # Para gradientes, adicionamos notação de norma, média ou desvio padrão
-                        # O cabeçalho mostra 'mean', 'std' e sem sufixo (que é a norma ou o valor bruto)
-                        if 'norm' in col:
-                            latex_label = f'$\\nabla {latex_base}$'
-                        elif 'mean' in col:
-                            latex_label = f'$\\text{{Média}} (\\nabla {latex_base})$'
-                        elif 'std' in col:
-                            latex_label = f'$\\sigma (\\nabla {latex_base})$'
-                        else:
-                            # Fallback simples (Assume que o gradiente sem sufixo é a norma)
-                            latex_label = f'$\\nabla {latex_base}$'
-                    else: # weight
-                        # Assumimos que qualquer coluna de peso sendo plotada para evolução é a sua magnitude (norma),
-                        # pois os dados brutos ou a média/std dos pesos não são tipicamente plotados assim.
-                        latex_label = f'${latex_base}$'
-                        
-                    rename_map[col] = latex_label
-            
-            return data_frame.rename(columns=rename_map)
+
 
         # 1. Plots de Loss (inalterado)
         loss_data = data.filter(like='loss')
         ax = loss_data.plot()
         fechar_plot(self.directory, 'loss', axle_x='Época', axle_y='Loss', ax=ax)
-        
+
         # 2. Plots de Recompensa (inalterado)
         data_to_plot = pd.read_csv(f'{self.directory}/rewards.csv')
         rewards = data_to_plot.T
@@ -275,11 +294,11 @@ class Experimento():
             label='$\\pm 1$ Desvio Padrão'
         )
         fechar_plot(self.directory, 'reward', 'Iteração', 'Recompensa', ax)
-        
+
         # 3. Plots de Pesos e Gradientes (COM REGEX REFORÇADO)
-        
+
         # --- CORREÇÃO DE REGEX ---
-        
+
         # Suffix para colunas de peso (captura _weight, _layer, e opcionalmente _norm)
         # NOTA: O prefixo ^(actor|critic) foi removido
         # Matches columns like:
@@ -290,11 +309,17 @@ class Experimento():
         # The pattern matches column names ending with:
         #   '_weight' + optional separator + 'layer' + optional separator + optional layer number +
         #   optional separator + 'weight' or 'bias' + optional '_norm' at the end.
-        weight_regex_suffix = r'_weight[._\s]?layer(?:[._\s](\d+))?[._\s]?(weight|bias)(?:_norm)?$'
-        
-        # Suffix para colunas de gradiente (captura _grad, _layer, e opcionalmente _norm, _mean, _std)
-        grad_regex_suffix = r'_grad[._\s]?layer(?:[._\s](\d+))?[._\s]?(weight|bias)(?:_norm|_mean|_std)?$'
-        
+        # Suffix for weight columns
+        weight_regex_suffix = (
+            r"_weight[._\s]?layer(?:[._\s](\d+))?"
+            r"[._\s]?(weight|bias)(?:_norm)?$"
+        )
+
+        # Suffix for gradient columns
+        grad_regex_suffix = (
+            r"_grad[._\s]?layer(?:[._\s](\d+))?"
+            r"[._\s]?(weight|bias)(?:_norm|_mean|_std)?$"
+        )
         # Ator - Pesos
         actor_weight_data = data.filter(regex=r'^actor' + weight_regex_suffix)
         actor_weight_data = apply_latex_legend(actor_weight_data, 'weight')
@@ -320,11 +345,11 @@ class Experimento():
         fechar_plot(self.directory, 'critic_grad', axle_y='Magnitude dos Gradientes', ax= ax)
 
         # 4. Plots de Informação Mútua (MI) - Inalterado, já usa LaTeX
-        
-        # Filtrar apenas as colunas de MI do Ator. O regex agora busca o novo padrão: I_qualquer_coisa
+
+        # Filtrar apenas as colunas de MI do Ator. O regex agora busca o novo padrão: I_any
         actor_mi_cols = data.filter(regex=r'^actor_I_.+').columns.tolist()
         # Gera combinações usando as chaves seguras (ex: I_X_h1, I_h1_h2)
-        combinacoes_sequenciais_seguras = gera_combinacoes(colunas_mi_seguras=actor_mi_cols) 
+        combinacoes_sequenciais_seguras = gera_combinacoes(colunas_mi_seguras=actor_mi_cols)
 
         # Definir a coluna de cor baseada no índice
         size = data.shape[0]
@@ -332,44 +357,39 @@ class Experimento():
 
         for prefix in ['actor', 'critic']:
             mi_data = data.filter(regex=rf'^{prefix}_I_.+')
-            
+
             # Percorre as combinações sequenciais (as chaves SEGURAS sem o prefixo)
             for col1_safe, col2_safe in combinacoes_sequenciais_seguras:
                 # Recompõe os nomes completos das colunas no DataFrame
                 col1_full_name = f'{prefix}_{col1_safe}'
                 col2_full_name = f'{prefix}_{col2_safe}'
-                
-                # Verifica se as colunas existem no DataFrame (caso o agente de ref não tenha 'Y_ref')
+
+                # Verifica se as colunas existem no DataFrame
+                # (caso o agente de ref não tenha 'Y_ref')
                 if col1_full_name not in mi_data.columns or col2_full_name not in mi_data.columns:
                      continue
-                     
+
                 val1 = mi_data[col1_full_name]
                 val2 = mi_data[col2_full_name]
-                    
+
                 _, ax = plt.subplots()
                 plt.scatter(val1, val2, c=color_col, cmap='magma')
-                
+
                 # Cria a chave segura combinada para o nome do arquivo
                 combined_safe_key = combinar_strings((col1_safe, col2_safe))
-                
-                # Geração da Label do Plot (Formato LaTeX)
-                # Exemplo: I_X_h1 -> I(X,h_1)
-                
-                # Função auxiliar para converter o nome seguro (X, h1, Yhat) para LaTeX (X, h_1, \hat{Y})
-                def safe_to_latex(safe_key: str) -> str:
-                    key = safe_key.replace('I_', '').replace('_', ',')
-                    # Troca h1 por h_1, h2 por h_2, etc. (se houver mais de um dígito, o regex segura)
-                    key = re.sub(r'(h)(\d+)', r'h_{\2}', key)
-                    key = key.replace('Yhat', '\\hat{Y}')
-                    key = key.replace('Y_ref', 'Y') # Y_ref deve ser Y no plot
-                    return f'I({key})'
-                
+
                 # Labels dos eixos (ex: $I(X,h_1)$)
                 col_x_label_latex = f'${safe_to_latex(col1_safe)}$'
                 col_y_label_latex = f'${safe_to_latex(col2_safe)}$'
-                
+
                 # Nome do arquivo (usa a chave segura combinada)
-                fechar_plot(self.directory, f'{prefix}_{combined_safe_key}', col_x_label_latex, col_y_label_latex, ax)
+                fechar_plot(
+                    self.directory,
+                    f'{prefix}_{combined_safe_key}',
+                    col_x_label_latex,
+                    col_y_label_latex,
+                    ax
+                    )
 
 
         # 5. Colorbar (inalterado, apenas garantindo que o `size` esteja correto)
@@ -378,7 +398,7 @@ class Experimento():
         cmap = plt.get_cmap('magma')
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
-        
+
         cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
         cbar.set_label('Épocas')
         fechar_plot(self.directory, 'colorbar', ax=ax)
@@ -387,36 +407,40 @@ class Experimento():
         for seed in self.seeds:
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps= self.timesteps, progress_bar= False)
-        
+
         # recompensa
         df = pd.DataFrame(self.model.rewards_list)
         rewards_directory = os.path.join(self.directory, 'rewards.csv')
-        df.to_csv(rewards_directory, mode= 'w', index=False, header= True)    
+        df.to_csv(rewards_directory, mode= 'w', index=False, header= True)
 
         self.model.save(os.path.join(self.directory, 'agente_treinado'))
 
-        params = {chave: valor for chave, valor in self.__dict__.items() if not chave in ['train_env', 'model', '_hyperparams']}
+        params = {
+            chave: valor
+            for chave, valor in self.__dict__.items()
+            if chave not in ['train_env', 'model', '_hyperparams']
+        }
         json_string = json.dumps(params, indent= 4)
         json_path = os.path.join(self.directory, f'{self.env_id}-{self.timesteps}.json')
-        with open(json_path, 'w') as arquivo:      
+        with open(json_path, 'w') as arquivo:
             arquivo.write(json_string)
 
         self.plots()
         self.train_env.close()
-        
+
         # plt.close('all')
-        
+
     def cleanup(self):
         """Cleanup completo de todos os recursos"""
-        import gc        
+        import gc
         # 1. Fecha e limpa o ambiente
         if hasattr(self, 'train_env') and self.train_env is not None:
             try:
                 self.train_env.close()
-            except:
+            except Exception:
                 pass
             del self.train_env
-        
+
         # 2. Limpa o modelo principal
         if hasattr(self, 'model') and self.model is not None:
             # Limpa componentes internos do modelo
@@ -425,15 +449,15 @@ class Experimento():
             if hasattr(self.model, 'env'):
                 try:
                     self.model.env.close() #type: ignore
-                except:
+                except Exception:
                     pass
             if hasattr(self.model, 'policy'):
                 del self.model.policy
             if hasattr(self.model, '_last_obs'):
                 del self.model._last_obs
-            
+
             del self.model
-        
+
         # 3. Limpa o reference_agent (IMPORTANTE!)
         if hasattr(self, 'reference_agent') and self.reference_agent is not None:
             if hasattr(self.reference_agent, 'rollout_buffer'):
@@ -441,22 +465,22 @@ class Experimento():
             if hasattr(self.reference_agent, 'policy'):
                 del self.reference_agent.policy
             del self.reference_agent
-        
+
         # 5. Limpa o __dict__ inteiro
         attrs_to_keep = []  # Lista vazia = limpa tudo
         for attr in list(self.__dict__.keys()):
             if attr not in attrs_to_keep:
                 try:
                     delattr(self, attr)
-                except:
+                except Exception:
                     pass
-        
+
         # 6. Força garbage collection
         gc.collect()
-    
+
     def __del__(self):
         """Destrutor - garante cleanup"""
         try:
             self.cleanup()
-        except:
+        except Exception:
             pass

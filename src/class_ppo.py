@@ -1,27 +1,29 @@
-from stable_baselines3.common.utils import explained_variance
-from npeet import entropy_estimators as ee
-from torch.nn import functional as F
-from stable_baselines3 import PPO
-from gymnasium import spaces
-from typing import Optional
-import pandas as pd
-import numpy as np
-import gymnasium
-import itertools
-import torch
 import copy
+import itertools
 import os
+from typing import Optional
+
+import gymnasium
+import numpy as np
+import pandas as pd
+import torch
+from gymnasium import spaces
+from npeet import entropy_estimators as ee
+from stable_baselines3 import PPO
+from stable_baselines3.common.utils import explained_variance
+from torch.nn import functional as F
+
 
 class PPO_tunado(PPO):
     def __init__(
-            self, 
-            directory: str, 
-            policy: str, 
-            env: gymnasium.Env, 
-            ref_agent: Optional[str], 
-            calc_mutual_info: bool, 
+            self,
+            directory: str,
+            policy: str,
+            env: gymnasium.Env,
+            ref_agent: Optional[str],
+            calc_mutual_info: bool,
             hparams: dict
-            ):            
+            ):
         super().__init__(policy, env, **hparams)
         self.directory = os.path.join(directory, 'resultados.csv')
         self.calc_mutual_info = calc_mutual_info
@@ -31,8 +33,8 @@ class PPO_tunado(PPO):
         if ref_agent is not None:
             temp_agent = PPO('MlpPolicy', env)
             self.reference_agent = temp_agent.load(ref_agent)
-        
-    
+
+
     def train(self):
         """
         Update policy using the currently gathered rollout buffer.
@@ -45,32 +47,34 @@ class PPO_tunado(PPO):
         clip_range = self.clip_range(self._current_progress_remaining)  # type: ignore[operator]
         # Optional: clip range for the value function
         if self.clip_range_vf is not None:
-            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)  # type: ignore[operator]
+            clip_range_vf = self.clip_range_vf(
+                self._current_progress_remaining
+            )  # type: ignore[operator]
 
         entropy_losses = []
         pg_losses, value_losses = [], []
         clip_fractions = []
 
         continue_training = True
-        
+
         layer_size = len(self.policy_kwargs['net_arch'])
         measure_size = 2
-        
+
         # Nomes RAW (brutos) - Usados para indexar as ativações internamente (como antes)
         layer_names_raw = [f'h_{i+1}' for i in range(layer_size)]
-        layer_names_raw.insert(0, 'X') 
+        layer_names_raw.insert(0, 'X')
         output_names_raw = copy.copy(layer_names_raw)
         output_names_raw.extend(['hat Y'])
-        
+
         # Mapeamento de nomes RAW para SAFE (Seguros para o CSV/Logging)
         def get_safe_name(name: str) -> str:
             """Converte nomes de camada (X, h_1, hat Y, Y) em nomes seguros (X, h1, Yhat, Y_ref)."""
             if name == 'Y':
                 return 'Y_ref'
             return name.replace('h_', 'h').replace('hat Y', 'Yhat')
-            
+
         raw_to_safe_map = {raw: get_safe_name(raw) for raw in output_names_raw}
-        
+
         if self.reference_agent is not None:
             measure_size = measure_size + 2
             output_names_raw.extend(['Y']) # type: ignore
@@ -83,17 +87,18 @@ class PPO_tunado(PPO):
             for k_raw in output_names_raw[i+1:]:
                 j_safe = raw_to_safe_map.get(j_raw, j_raw)
                 k_safe = raw_to_safe_map.get(k_raw, k_raw)
-                
+
                 key_safe = f"I_{j_safe}_{k_safe}" # Novo formato: I_X_h1
-                mutual_info_mapping[key_safe] = (j_raw, k_raw) # (Raw Name 1, Raw Name 2) para lookup
-        
+                # (Raw Name 1, Raw Name 2) para lookup
+                mutual_info_mapping[key_safe] = (j_raw, k_raw)
+
         # Inicializa o dicionário de MI usando as chaves SEGURAS
         mutual_info = {key_safe: [] for key_safe in mutual_info_mapping.keys()}
-        
+
         # Facilita ao deixar ambos iteráveis
         actor_net = list(
             itertools.chain(
-                self.policy.mlp_extractor.policy_net.named_parameters(), 
+                self.policy.mlp_extractor.policy_net.named_parameters(),
                 self.policy.action_net.named_parameters()
                 )
             )
@@ -103,8 +108,9 @@ class PPO_tunado(PPO):
                 self.policy.value_net.named_parameters()
                 )
             )
-        
-        # Usando os nomes RAW para inicializar as ativações, pois a lógica de ativação ainda usa esses nomes
+
+        # Usando os nomes RAW para inicializar as ativações
+        # pois a lógica de ativação ainda usa esses nomes
         network_activations = {
             'actor':  {
                 'tensor_policy_activations': {},
@@ -119,7 +125,7 @@ class PPO_tunado(PPO):
                 'numpy_layers': {}
             }
         }
-        
+
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             metrics = {
@@ -151,7 +157,10 @@ class PPO_tunado(PPO):
                 if self.use_sde:
                     self.policy.reset_noise(self.batch_size)
 
-                values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+                values, log_prob, entropy = self.policy.evaluate_actions(
+                    rollout_data.observations,
+                    actions
+                    )
                 values = values.flatten()
                 # Normalize advantage
                 advantages = rollout_data.advantages
@@ -178,9 +187,11 @@ class PPO_tunado(PPO):
                 else:
                     # Clip the difference between old and new value
                     # NOTE: this depends on the reward scaling
-                    
+
                     values_pred = rollout_data.old_values + torch.clamp(
-                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf #type: ignore
+                        values - rollout_data.old_values,
+                        -clip_range_vf, #type: ignore
+                        clip_range_vf
                     )
                 # Value loss using the TD(gae_lambda) target
                 value_loss = F.mse_loss(rollout_data.returns, values_pred)
@@ -208,7 +219,8 @@ class PPO_tunado(PPO):
                 if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
                     continue_training = False
                     if self.verbose >= 1:
-                        print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
+                        print(f"Early stopping at step {epoch}"
+                              f"due to reaching max kl: {approx_kl_div:.2f}")
                     break
 
                 # Optimization step
@@ -223,20 +235,21 @@ class PPO_tunado(PPO):
                         entrada = self.policy.extract_features(rollout_data.observations)
                         if not isinstance(entrada, torch.Tensor):
                             raise TypeError(f"Expected torch.Tensor, got {type(entrada)}")
-                        
+
                         ite_raw_names = 1
                         network_activations['actor']['tensor_policy_activations']['X'] = entrada
-                        
+
                         x = entrada
                         for i, layer1 in enumerate(self.policy.mlp_extractor.policy_net):
                             x = layer1(x)
                             if i % 2 == 1:  # A cada par de camadas (linear + ativação)
                                 # Usa nomes RAW para armazenar
-                                network_activations['actor']['tensor_policy_activations'][layer_names_raw[ite_raw_names]] = x
+                                network_activations['actor'][
+                                    'tensor_policy_activations'][layer_names_raw[ite_raw_names]] = x
                                 ite_raw_names += 1
-                        
+
                         last_actor_activation = x
-                        
+
                         ite_raw_names = 1
                         network_activations['critic']['tensor_policy_activations']['X'] = entrada
                         y = entrada
@@ -256,7 +269,7 @@ class PPO_tunado(PPO):
                         #saída da rede
                         network_activations['actor']['tensor_layers']['hat Y'] = self.policy.action_net(last_actor_activation)
                         network_activations['critic']['tensor_layers']['hat Y'] = self.policy.value_net(last_critic_activation)
-                        
+
                         #saída do agente de referência
                         if self.reference_agent is not None:
                             network_activations['actor']['tensor_layers']['Y'] = torch.from_numpy(self.reference_agent.predict(rollout_data.observations)[0]).to(self.device) #type: ignore
@@ -265,22 +278,22 @@ class PPO_tunado(PPO):
                         for key in network_activations['actor']['tensor_policy_activations'].keys():
                             network_activations['actor']['numpy_policy_activations'][key] = network_activations['actor']['tensor_policy_activations'][key].detach().cpu().numpy()
                             network_activations['critic']['numpy_policy_activations'][key] = network_activations['critic']['tensor_policy_activations'][key].detach().cpu().numpy()
-                        
+
                         for key in network_activations['actor']['tensor_layers'].keys():
                             network_activations['actor']['numpy_layers'][key] = network_activations['actor']['tensor_layers'][key].detach().cpu().numpy()
                             network_activations['critic']['numpy_layers'][key] = network_activations['critic']['tensor_layers'][key].detach().cpu().numpy()
-                        
+
                         # CALCULA MI USANDO O MAPA SEGURO E AS CHAVES RAW PARA LOOKUP
                         for key_safe, (raw1, raw2) in mutual_info_mapping.items():
                             # O raw1 (X ou h_i) está em numpy_policy_activations.
                             # O raw2 (h_j, hat Y ou Y) está em numpy_layers.
-                            
+
                             # Actor MI
                             metrics['actor']['mutual_info'][key_safe].append(ee.mi(
                                 network_activations['actor']['numpy_policy_activations'][raw1],
                                 network_activations['actor']['numpy_layers'][raw2]
                                 ))
-                            
+
                             # Critic MI
                             metrics['critic']['mutual_info'][key_safe].append(ee.mi(
                                 network_activations['critic']['numpy_policy_activations'][raw1],
@@ -288,25 +301,25 @@ class PPO_tunado(PPO):
                                 ))
 
                         for key, value in actor_net:
-                            metrics['actor']['weights'][key].append(value.norm().item()) 
+                            metrics['actor']['weights'][key].append(value.norm().item())
                             if value.grad is not None:
-                                metrics['actor']['gradient'][key].append(value.grad.norm().item()) 
+                                metrics['actor']['gradient'][key].append(value.grad.norm().item())
                             else:
-                                metrics['actor']['gradient'][key].append(0.0) 
-                        
+                                metrics['actor']['gradient'][key].append(0.0)
+
                         for key, value in critic_net:
-                            metrics['critic']['weights'][key].append(value.norm().item()) 
+                            metrics['critic']['weights'][key].append(value.norm().item())
                             if value.grad is not None:
-                                metrics['critic']['gradient'][key].append(value.grad.norm().item()) 
+                                metrics['critic']['gradient'][key].append(value.grad.norm().item())
                             else:
-                                metrics['critic']['gradient'][key].append(0.0) 
+                                metrics['critic']['gradient'][key].append(0.0)
 
             # Logs
             if self.calc_mutual_info:
                 with torch.no_grad():
                     for key_safe, values1 in metrics['actor']['mutual_info'].items():
                         self.logger.record(f"actor_{key_safe}", np.mean(values1))
-                        
+
                     for key_safe, values2 in metrics['critic']['mutual_info'].items():
                         self.logger.record(f"critic_{key_safe}", np.mean(values2))
 
@@ -329,21 +342,21 @@ class PPO_tunado(PPO):
 
                     if self.clip_range_vf is not None:
                         self.logger.record("clip_range_vf", clip_range_vf)
-                
+
                 # CSV writing
                 data = self.logger.name_to_value
                 df = pd.DataFrame(data, index=[0])
 
                 df.to_csv(self.directory, mode='a' if os.path.exists(self.directory) else 'w', index=False, header= not os.path.exists(self.directory))
-            
+
             self._n_updates += 1
             if not continue_training:
                 break
-        
+
         #! Quando for paralelizar, investigar como coletar adequadamente essa recompensa
         reward = self.env.envs[0].get_episode_rewards() #type: ignore
-        self.rewards_list.append(reward) 
+        self.rewards_list.append(reward)
         self.env.envs[0].episode_returns = [] #type: ignore
-        
+
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
         self.logger.record("explained_variance", explained_var)
