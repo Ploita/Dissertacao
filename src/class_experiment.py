@@ -205,6 +205,7 @@ class Experimento():
             'device': self.device
         }        
 
+        #todo multiplos envs entra aqui
         self.train_env = Monitor(gymnasium.make(self.env_id))
 
         #* Reprodutibilidade
