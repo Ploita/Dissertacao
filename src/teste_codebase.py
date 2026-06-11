@@ -6,7 +6,7 @@ env_id = 'CartPole-v1'
 params = {
     'policy_kwargs': dict(net_arch=[num_neurons, num_neurons]),
     'timesteps': int(1e6),
-    'directory': f'../data/groups/{env_id}_{num_neurons}',
+    'directory': f'data/groups/{env_id}_{num_neurons}',
     'net_init': 2
 }
 
