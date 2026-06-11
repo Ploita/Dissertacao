@@ -1,4 +1,0 @@
-GeraPlots
-class_experiment
-class_ppo
-teste_codebase

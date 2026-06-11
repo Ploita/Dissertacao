@@ -140,9 +140,6 @@ class Experimento():
         self.reference_agent = None
         self.calc_mutual_info = True
         self.directory = '../data/results'
-        self.mi_beta_start = 1e-5
-        self.mi_beta_end = 1e-3
-        self.mi_beta_start_progress = 0.5
 
         # Model Parameters
         self.learning_rate = 3e-4
@@ -166,7 +163,6 @@ class Experimento():
         # self.tensorboard_log =  "../data/tensorboard_logs/"
         self.verbose = 0
         self.device = "cpu"
-        self.progress_bar = True
         
         # Recording Parameters
         self.recording = False
@@ -210,17 +206,7 @@ class Experimento():
         #* Reprodutibilidade
         torch.manual_seed(self.net_init)
         
-        self.model = PPO_tunado(
-            self.directory,
-            'MlpPolicy',
-            self.train_env,
-            self.reference_agent,
-            self.calc_mutual_info,
-            self._hyperparams,
-            mi_beta_start=self.mi_beta_start,
-            mi_beta_end=self.mi_beta_end,
-            mi_beta_start_progress=self.mi_beta_start_progress
-        )
+        self.model = PPO_tunado(self.directory, 'MlpPolicy', self.train_env, self.reference_agent, self.calc_mutual_info, self._hyperparams)
     
     def plots(self):
         plt.close('all')
@@ -400,7 +386,7 @@ class Experimento():
     def treinamento(self):
         for seed in self.seeds:
             self.model.set_random_seed(seed)
-            self.model.learn(total_timesteps=self.timesteps, progress_bar=self.progress_bar)
+            self.model.learn(total_timesteps= self.timesteps, progress_bar= False)
         
         # recompensa
         df = pd.DataFrame(self.model.rewards_list)
