@@ -10,7 +10,7 @@ import torch
 from matplotlib.colors import Normalize
 from stable_baselines3.common.monitor import Monitor
 
-from class_ppo import PPO_tunado
+from class_ppo import CustomPPO
 
 plt.style.use('src/style.mplstyle')
 
@@ -257,7 +257,7 @@ class Experimento():
         #* Reprodutibilidade
         torch.manual_seed(self.net_init)
 
-        self.model = PPO_tunado(
+        self.model = CustomPPO(
             self.directory,
             'MlpPolicy',
             self.train_env,
