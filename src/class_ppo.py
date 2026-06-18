@@ -17,33 +17,35 @@ from class_mutual_info import MutualInfoCalculator
 
 class CustomPPO(PPO):
     def __init__(
-            self,
-            directory: str,
-            policy: str,
-            env: gymnasium.Env,
-            ref_agent: Optional[str],
-            calc_mutual_info: bool,
-            hparams: dict
-            ):
+        self,
+        directory: str,
+        policy: str,
+        env: gymnasium.Env,
+        ref_agent: Optional[str],
+        calc_mutual_info: bool,
+        hparams: dict,
+    ):
         super().__init__(policy, env, **hparams)
-        self.directory = os.path.join(directory, 'resultados.csv')
+        self.directory = os.path.join(directory, "resultados.csv")
         self.reference_agent = None
         self.reference_control = None
         self.rewards_list = []
+        
+        # Buffer em memória para evitar escrita constante em disco
+        self.eval_logs = []
 
         if ref_agent is not None:
-            temp_agent = PPO('MlpPolicy', env)
+            temp_agent = PPO("MlpPolicy", env)
             self.reference_agent = temp_agent.load(ref_agent)
 
         self.fetcher = ActivationFetcher(self) if calc_mutual_info else None
 
         if calc_mutual_info:
-            layer_size = len(self.policy_kwargs['net_arch'])
+            layer_size = len(self.policy_kwargs["net_arch"])
             has_ref = self.reference_agent is not None
             self.mi_calculator = MutualInfoCalculator(self, layer_size, has_ref)
         else:
             self.mi_calculator = None
-
 
     def train(self):
         self.policy.set_training_mode(True)
@@ -62,12 +64,12 @@ class CustomPPO(PPO):
 
         actor_net = list(itertools.chain(
             self.policy.mlp_extractor.policy_net.named_parameters(),
-            self.policy.action_net.named_parameters())
-        )
+            self.policy.action_net.named_parameters()
+        ))
         critic_net = list(itertools.chain(
             self.policy.mlp_extractor.value_net.named_parameters(),
-            self.policy.value_net.named_parameters())
-        )
+            self.policy.value_net.named_parameters()
+        ))
 
         for epoch in range(self.n_epochs):
             mi_keys = self.mi_calculator.mapping.keys() if self.mi_calculator else {}
@@ -97,7 +99,6 @@ class CustomPPO(PPO):
                 if self.use_sde:
                     self.policy.reset_noise(self.batch_size)
 
-                # Os hooks disparam aqui nativamente de forma limpa
                 values, log_prob, entropy = self.policy.evaluate_actions(
                     rollout_data.observations,
                     actions
@@ -151,19 +152,18 @@ class CustomPPO(PPO):
                 torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.policy.optimizer.step()
 
-                # Delegando o cálculo para a classe de MI, isolando os Tensores
                 if self.fetcher is not None and self.mi_calculator is not None:
                     self.mi_calculator.compute(metrics, self.fetcher, rollout_data.observations)
 
                     for key, value in actor_net:
-                        metrics['actor']['weights'][key].append(value.norm().item())
-                        metrics['actor']['gradient'][key].append(
+                        metrics["actor"]["weights"][key].append(value.norm().item())
+                        metrics["actor"]["gradient"][key].append(
                             value.grad.norm().item() if value.grad is not None else 0.0
                         )
 
                     for key, value in critic_net:
-                        metrics['critic']['weights'][key].append(value.norm().item())
-                        metrics['critic']['gradient'][key].append(
+                        metrics["critic"]["weights"][key].append(value.norm().item())
+                        metrics["critic"]["gradient"][key].append(
                             value.grad.norm().item() if value.grad is not None else 0.0
                         )
 
@@ -171,10 +171,10 @@ class CustomPPO(PPO):
 
             if self.fetcher is not None and self.mi_calculator is not None:
                 with torch.no_grad():
-                    for key_safe, values1 in metrics['actor']['mutual_info'].items():
+                    for key_safe, values1 in metrics["actor"]["mutual_info"].items():
                         self.logger.record(f"actor_{key_safe}", np.mean(values1))
 
-                    for key_safe, values2 in metrics['critic']['mutual_info'].items():
+                    for key_safe, values2 in metrics["critic"]["mutual_info"].items():
                         self.logger.record(f"critic_{key_safe}", np.mean(values2))
 
                     self.logger.record("entropy_loss", np.mean(entropy_losses))
@@ -183,7 +183,8 @@ class CustomPPO(PPO):
                     self.logger.record("approx_kl", np.mean(approx_kl_divs))
                     self.logger.record("clip_fraction", np.mean(clip_fractions))
                     self.logger.record("loss", loss.item())
-                    for key in metrics['actor']['gradient'].keys():
+                    
+                    for key in metrics["actor"]["gradient"].keys():
                         self.logger.record(
                             f"actor_weight_layer_{key}",
                             np.mean(metrics['actor']['weights'][key])
@@ -193,7 +194,7 @@ class CustomPPO(PPO):
                             np.mean(metrics['actor']['gradient'][key])
                         )
 
-                    for key in metrics['critic']['gradient'].keys():
+                    for key in metrics["critic"]["gradient"].keys():
                         self.logger.record(
                             f"critic_weight_layer_{key}",
                             np.mean(metrics['critic']['weights'][key])
@@ -212,14 +213,8 @@ class CustomPPO(PPO):
                     if self.clip_range_vf is not None:
                         self.logger.record("clip_range_vf", clip_range_vf)
 
-                data = self.logger.name_to_value
-                df = pd.DataFrame(data, index=[0])
-                df.to_csv(
-                    self.directory,
-                    mode='a' if os.path.exists(self.directory) else 'w',
-                    index=False,
-                    header=not os.path.exists(self.directory)
-                )
+                # EM MEMÓRIA: Copia o estado do dicionário para a nossa lista interna
+                self.eval_logs.append(self.logger.name_to_value.copy())
 
             self._n_updates += 1
             if not continue_training:
@@ -230,10 +225,20 @@ class CustomPPO(PPO):
         self.env.envs[0].episode_returns = []
 
         explained_var = explained_variance(
-            self.rollout_buffer.values.flatten(),
-            self.rollout_buffer.returns.flatten()
+            self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
         )
         self.logger.record("explained_variance", explained_var)
+
+        # DESCARGA DO LOG: Fora do loop de épocas, salvamos tudo de uma vez no CSV
+        if self.eval_logs:
+            df = pd.DataFrame(self.eval_logs)
+            df.to_csv(
+                self.directory,
+                mode="a" if os.path.exists(self.directory) else "w",
+                index=False,
+                header=not os.path.exists(self.directory),
+            )
+            self.eval_logs.clear()  # Limpa o buffer para o próximo ciclo de rollouts
 
         if self.fetcher is not None:
             self.fetcher.remove()
