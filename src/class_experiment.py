@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import torch
 from matplotlib.colors import Normalize
+from src.class_ppo import CustomPPO
 from stable_baselines3.common.monitor import Monitor
 
-from class_ppo import CustomPPO
+plt.style.use("src/style.mplstyle")
 
-plt.style.use('src/style.mplstyle')
 
 def criar_pasta(directory: str) -> str:
     """
@@ -20,7 +20,7 @@ def criar_pasta(directory: str) -> str:
     """
     os.makedirs(directory, exist_ok=True)
     max_number = 0
-    pattern = re.compile(r'^(\d{3})$')
+    pattern = re.compile(r"^(\d{3})$")
 
     for item in os.listdir(directory):
         if os.path.isdir(os.path.join(directory, item)) and pattern.match(item):
@@ -38,6 +38,7 @@ def criar_pasta(directory: str) -> str:
     os.makedirs(new_directory)
     return new_directory
 
+
 def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     """
     Gera combinações sequenciais de MI (ex: I_A_B e I_B_C).
@@ -53,20 +54,20 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     # 1. Extrair os componentes (A, B) de cada chave (I_A_B)
     for col_full in colunas_mi_seguras:
         # Remove o prefixo 'actor_' ou 'critic_'
-        col_safe = col_full.split('_', 1)[1] # Ex: 'I_X_h1'
+        col_safe = col_full.split("_", 1)[1]  # Ex: 'I_X_h1'
 
         # O split pega a primeira letra 'I' e os dois componentes 'X' e 'h1'
-        parts = col_safe.split('_')
-        if len(parts) == 3 and parts[0] == 'I':
-            stripped_info[col_safe] = [parts[1], parts[2]] # Ex: ['X', 'h1']
+        parts = col_safe.split("_")
+        if len(parts) == 3 and parts[0] == "I":
+            stripped_info[col_safe] = [parts[1], parts[2]]  # Ex: ['X', 'h1']
 
     # 2. Encontrar a sequência I_A_B e I_B_C
     for col1_safe, info1 in stripped_info.items():
         if len(info1) == 2:  # Deve ser I_A_B
-            segundo_elemento_col1 = info1[1] # O 'B'
+            segundo_elemento_col1 = info1[1]  # O 'B'
             for col2_safe, info2 in stripped_info.items():
                 if col1_safe != col2_safe and len(info2) == 2:
-                    primeiro_elemento_col2 = info2[0] # O 'B'
+                    primeiro_elemento_col2 = info2[0]  # O 'B'
 
                     # Encontrou a sequência: I_A_B seguido de I_B_C
                     if segundo_elemento_col1 == primeiro_elemento_col2:
@@ -74,24 +75,26 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
 
     return combinacoes_sequenciais
 
+
 def combinar_strings(tupla_de_chaves_seguras: tuple[str, str]) -> str:
     """
     Combina duas chaves seguras do tipo I_A_B e I_B_C em uma chave de plot I_A_B_C.
     Ex: ('I_X_h1', 'I_h1_h2') -> 'I_X_h1_h2' (chave segura para nome de arquivo)
     """
-    primeira = tupla_de_chaves_seguras[0] # Ex: 'I_X_h1'
-    segunda = tupla_de_chaves_seguras[1] # Ex: 'I_h1_h2'
+    primeira = tupla_de_chaves_seguras[0]  # Ex: 'I_X_h1'
+    segunda = tupla_de_chaves_seguras[1]  # Ex: 'I_h1_h2'
 
     # Remove o 'I_' do começo
-    args_primeira_str = primeira[2:] # Ex: 'X_h1'
-    args_segunda_str = segunda[2:]   # Ex: 'h1_h2'
+    args_primeira_str = primeira[2:]  # Ex: 'X_h1'
+    args_segunda_str = segunda[2:]  # Ex: 'h1_h2'
 
-    lista_args = args_primeira_str.split('_') + args_segunda_str.split('_')
+    lista_args = args_primeira_str.split("_") + args_segunda_str.split("_")
     # Mantém apenas os elementos únicos na ordem de ocorrência (X, h1, h2)
     args_combinados_unicos = list(dict.fromkeys(lista_args))
 
     # Retorna o nome seguro combinado: I_X_h1_h2
-    return f'{"_".join(args_combinados_unicos)}'
+    return f"{'_'.join(args_combinados_unicos)}"
+
 
 # Função auxiliar local para renomear colunas para LaTeX para plots de pesos/gradientes
 def apply_latex_legend(data_frame: pd.DataFrame, component_type: str) -> pd.DataFrame:
@@ -108,7 +111,7 @@ def apply_latex_legend(data_frame: pd.DataFrame, component_type: str) -> pd.Data
             param_type = match.group(4)
 
             # Se não houver número de camada, assume-se que é a camada de saída (Out).
-            layer_label = int(layer_id)//2 if layer_id is not None else '\\text{Out}'
+            layer_label = int(layer_id) // 2 if layer_id is not None else "\\text{Out}"
 
             # Base: W_i/W_Out ou b_i/b_Out
             if param_type == "weight":
@@ -116,35 +119,37 @@ def apply_latex_legend(data_frame: pd.DataFrame, component_type: str) -> pd.Data
             else:
                 latex_base = f"\\text{{b}}_{{{layer_label}}}"
 
-            if component_type == 'grad':
+            if component_type == "grad":
                 # Para gradientes, adicionamos notação de norma, média ou desvio padrão
                 # O cabeçalho mostra 'mean', 'std' e sem sufixo (que é a norma ou o valor bruto)
-                if 'norm' in col:
-                    latex_label = f'$\\nabla {latex_base}$'
-                elif 'mean' in col:
-                    latex_label = f'$\\text{{Média}} (\\nabla {latex_base})$'
-                elif 'std' in col:
-                    latex_label = f'$\\sigma (\\nabla {latex_base})$'
+                if "norm" in col:
+                    latex_label = f"$\\nabla {latex_base}$"
+                elif "mean" in col:
+                    latex_label = f"$\\text{{Média}} (\\nabla {latex_base})$"
+                elif "std" in col:
+                    latex_label = f"$\\sigma (\\nabla {latex_base})$"
                 else:
                     # Fallback simples (Assume que o gradiente sem sufixo é a norma)
-                    latex_label = f'$\\nabla {latex_base}$'
-            else: # weight
-                latex_label = f'${latex_base}$'
+                    latex_label = f"$\\nabla {latex_base}$"
+            else:  # weight
+                latex_label = f"${latex_base}$"
 
             rename_map[col] = latex_label
 
     return data_frame.rename(columns=rename_map)
 
-def safe_to_latex(safe_key: str) -> str:
-    key = safe_key.replace('I_', '').replace('_', ',')
-    # Troca h1 por h_1, etc. (se houver mais de um dígito, o regex segura)
-    key = re.sub(r'(h)(\d+)', r'h_{\2}', key)
-    key = key.replace('Yhat', '\\hat{Y}')
-    # Y_ref deve ser Y no plot
-    key = key.replace('Y_ref', 'Y')
-    return f'I({key})'
 
-def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = None):
+def safe_to_latex(safe_key: str) -> str:
+    key = safe_key.replace("I_", "").replace("_", ",")
+    # Troca h1 por h_1, etc. (se houver mais de um dígito, o regex segura)
+    key = re.sub(r"(h)(\d+)", r"h_{\2}", key)
+    key = key.replace("Yhat", "\\hat{Y}")
+    # Y_ref deve ser Y no plot
+    key = key.replace("Y_ref", "Y")
+    return f"I({key})"
+
+
+def fechar_plot(directory, plot_name, axle_x="Época", axle_y="Valor", ax=None):
     """Salva plot com zero vazamento de memória."""
     if ax is None:
         ax = plt.gca()
@@ -159,19 +164,18 @@ def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = 
     fig = ax.get_figure()
 
     # Layout SEM bbox_inches='tight' (que causa vazamentos)
-    fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15) #type: ignore
+    fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15)  # type: ignore
 
     # Salva com configuração mínima
-    fig.savefig( #type: ignore
-        f'{directory}/plots/{plot_name}.pdf',
-        dpi=75,           # DPI menor = menos memória
-        format='pdf',
-        facecolor='white'
+    fig.savefig(  # type: ignore
+        f"{directory}/plots/{plot_name}.pdf",
+        dpi=75,  # DPI menor = menos memória
+        format="pdf",
+        facecolor="white",
         # SEM bbox_inches='tight' - causa vazamentos!
     )
 
-
-    plt.close('all')
+    plt.close("all")
     plt.clf()
     plt.cla()
 
@@ -179,18 +183,18 @@ def fechar_plot(directory, plot_name, axle_x = 'Época', axle_y = 'Valor', ax = 
     # _pylab_helpers.Gcf.destroy_all()
 
 
-class Experimento():
+class Experimento:
     def __init__(self, params) -> None:
         # Setagem
-        self.env_id = 'CartPole-v1'
+        self.env_id = "CartPole-v1"
         self.n_envs = 4
-        self.policy_kwargs = dict(net_arch = [32,32])
+        self.policy_kwargs = dict(net_arch=[32, 32])
         self.seeds = [0]
         self.net_init = 1
         self.timesteps = int(1e3)
         self.reference_agent = None
         self.calc_mutual_info = True
-        self.directory = '../data/results'
+        self.directory = "../data/results"
 
         # Model Parameters
         self.learning_rate = 3e-4
@@ -224,76 +228,75 @@ class Experimento():
         for chave, valor in params.items():
             setattr(self, chave, valor)
 
-        #criar uma pasta com número maior sem perder a ordenação
+        # criar uma pasta com número maior sem perder a ordenação
         self.directory = criar_pasta(self.directory)
 
         self._hyperparams = {
-            'learning_rate': self.learning_rate,
-            'n_steps': self.n_steps,
-            'batch_size': self.batch_size,
-            'n_epochs': self.n_epochs,
-            'gamma': self.gamma,
-            'gae_lambda': self.gae_lambda,
-            'clip_range': self.clip_range,
-            'clip_range_vf': self.clip_range_vf,
-            'normalize_advantage': self.normalize_advantage,
-            'ent_coef': self.ent_coef,
-            'vf_coef': self.vf_coef,
-            'max_grad_norm': self.max_grad_norm,
-            'use_sde': self.use_sde,
-            'sde_sample_freq': self.sde_sample_freq,
-            'rollout_buffer_class': self.rollout_buffer_class,
-            'rollout_buffer_kwargs': self.rollout_buffer_kwargs,
-            'target_kl': self.target_kl,
-            'stats_window_size': self.stats_window_size,
+            "learning_rate": self.learning_rate,
+            "n_steps": self.n_steps,
+            "batch_size": self.batch_size,
+            "n_epochs": self.n_epochs,
+            "gamma": self.gamma,
+            "gae_lambda": self.gae_lambda,
+            "clip_range": self.clip_range,
+            "clip_range_vf": self.clip_range_vf,
+            "normalize_advantage": self.normalize_advantage,
+            "ent_coef": self.ent_coef,
+            "vf_coef": self.vf_coef,
+            "max_grad_norm": self.max_grad_norm,
+            "use_sde": self.use_sde,
+            "sde_sample_freq": self.sde_sample_freq,
+            "rollout_buffer_class": self.rollout_buffer_class,
+            "rollout_buffer_kwargs": self.rollout_buffer_kwargs,
+            "target_kl": self.target_kl,
+            "stats_window_size": self.stats_window_size,
             # 'tensorboard_log': self.tensorboard_log,
-            'policy_kwargs': self.policy_kwargs,
-            'verbose': self.verbose,
-            'device': self.device
+            "policy_kwargs": self.policy_kwargs,
+            "verbose": self.verbose,
+            "device": self.device,
         }
 
         self.train_env = Monitor(gymnasium.make(self.env_id))
 
-        #* Reprodutibilidade
+        # * Reprodutibilidade
         torch.manual_seed(self.net_init)
 
         self.model = CustomPPO(
             self.directory,
-            'MlpPolicy',
+            "MlpPolicy",
             self.train_env,
             self.reference_agent,
             self.calc_mutual_info,
-            self._hyperparams
-            )
+            self._hyperparams,
+        )
 
     def plots(self):
-        plt.close('all')
+        plt.close("all")
 
-        os.makedirs(f'{self.directory}/plots', exist_ok=True)
-        data = pd.read_csv(f'{self.directory}/resultados.csv')
-
+        os.makedirs(f"{self.directory}/plots", exist_ok=True)
+        data = pd.read_csv(f"{self.directory}/resultados.csv")
 
         # 1. Plots de Loss (inalterado)
-        loss_data = data.filter(like='loss')
+        loss_data = data.filter(like="loss")
         ax = loss_data.plot()
-        fechar_plot(self.directory, 'loss', axle_x='Época', axle_y='Loss', ax=ax)
+        fechar_plot(self.directory, "loss", axle_x="Época", axle_y="Loss", ax=ax)
 
         # 2. Plots de Recompensa (inalterado)
-        data_to_plot = pd.read_csv(f'{self.directory}/rewards.csv')
+        data_to_plot = pd.read_csv(f"{self.directory}/rewards.csv")
         rewards = data_to_plot.T
         means = rewards.apply(np.mean)
         stds = rewards.apply(np.std)
         _, ax = plt.subplots()
-        plt.plot(means, label='Média', color='blue')
+        plt.plot(means, label="Média", color="blue")
         plt.fill_between(
             range(len(means)),
             np.array(means) - np.array(stds),
             np.array(means) + np.array(stds),
             alpha=0.2,
-            color='blue',
-            label='$\\pm 1$ Desvio Padrão'
+            color="blue",
+            label="$\\pm 1$ Desvio Padrão",
         )
-        fechar_plot(self.directory, 'reward', 'Iteração', 'Recompensa', ax)
+        fechar_plot(self.directory, "reward", "Iteração", "Recompensa", ax)
 
         # 3. Plots de Pesos e Gradientes (COM REGEX REFORÇADO)
 
@@ -321,33 +324,33 @@ class Experimento():
             r"[._\s]?(weight|bias)(?:_norm|_mean|_std)?$"
         )
         # Ator - Pesos
-        actor_weight_data = data.filter(regex=r'^actor' + weight_regex_suffix)
-        actor_weight_data = apply_latex_legend(actor_weight_data, 'weight')
+        actor_weight_data = data.filter(regex=r"^actor" + weight_regex_suffix)
+        actor_weight_data = apply_latex_legend(actor_weight_data, "weight")
         ax = actor_weight_data.plot()
-        fechar_plot(self.directory, 'actor_weight', axle_y='Magnitude dos Pesos', ax= ax)
+        fechar_plot(self.directory, "actor_weight", axle_y="Magnitude dos Pesos", ax=ax)
 
         # Ator - Gradientes
-        actor_grad_data = data.filter(regex=r'^actor' + grad_regex_suffix)
-        actor_grad_data = apply_latex_legend(actor_grad_data, 'grad')
+        actor_grad_data = data.filter(regex=r"^actor" + grad_regex_suffix)
+        actor_grad_data = apply_latex_legend(actor_grad_data, "grad")
         ax = actor_grad_data.plot()
-        fechar_plot(self.directory, 'actor_grad', axle_y='Magnitude dos Gradientes', ax= ax)
+        fechar_plot(self.directory, "actor_grad", axle_y="Magnitude dos Gradientes", ax=ax)
 
         # Crítico - Pesos
-        critic_weight_data = data.filter(regex=r'^critic' + weight_regex_suffix)
-        critic_weight_data = apply_latex_legend(critic_weight_data, 'weight')
+        critic_weight_data = data.filter(regex=r"^critic" + weight_regex_suffix)
+        critic_weight_data = apply_latex_legend(critic_weight_data, "weight")
         ax = critic_weight_data.plot()
-        fechar_plot(self.directory, 'critic_weight', axle_y='Magnitude dos Pesos', ax= ax)
+        fechar_plot(self.directory, "critic_weight", axle_y="Magnitude dos Pesos", ax=ax)
 
         # Crítico - Gradientes
-        critic_grad_data = data.filter(regex=r'^critic' + grad_regex_suffix)
-        critic_grad_data = apply_latex_legend(critic_grad_data, 'grad')
+        critic_grad_data = data.filter(regex=r"^critic" + grad_regex_suffix)
+        critic_grad_data = apply_latex_legend(critic_grad_data, "grad")
         ax = critic_grad_data.plot()
-        fechar_plot(self.directory, 'critic_grad', axle_y='Magnitude dos Gradientes', ax= ax)
+        fechar_plot(self.directory, "critic_grad", axle_y="Magnitude dos Gradientes", ax=ax)
 
         # 4. Plots de Informação Mútua (MI) - Inalterado, já usa LaTeX
 
         # Filtrar apenas as colunas de MI do Ator. O regex agora busca o novo padrão: I_any
-        actor_mi_cols = data.filter(regex=r'^actor_I_.+').columns.tolist()
+        actor_mi_cols = data.filter(regex=r"^actor_I_.+").columns.tolist()
         # Gera combinações usando as chaves seguras (ex: I_X_h1, I_h1_h2)
         combinacoes_sequenciais_seguras = gera_combinacoes(colunas_mi_seguras=actor_mi_cols)
 
@@ -355,74 +358,73 @@ class Experimento():
         size = data.shape[0]
         color_col = np.arange(0, size)
 
-        for prefix in ['actor', 'critic']:
-            mi_data = data.filter(regex=rf'^{prefix}_I_.+')
+        for prefix in ["actor", "critic"]:
+            mi_data = data.filter(regex=rf"^{prefix}_I_.+")
 
             # Percorre as combinações sequenciais (as chaves SEGURAS sem o prefixo)
             for col1_safe, col2_safe in combinacoes_sequenciais_seguras:
                 # Recompõe os nomes completos das colunas no DataFrame
-                col1_full_name = f'{prefix}_{col1_safe}'
-                col2_full_name = f'{prefix}_{col2_safe}'
+                col1_full_name = f"{prefix}_{col1_safe}"
+                col2_full_name = f"{prefix}_{col2_safe}"
 
                 # Verifica se as colunas existem no DataFrame
                 # (caso o agente de ref não tenha 'Y_ref')
                 if col1_full_name not in mi_data.columns or col2_full_name not in mi_data.columns:
-                     continue
+                    continue
 
                 val1 = mi_data[col1_full_name]
                 val2 = mi_data[col2_full_name]
 
                 _, ax = plt.subplots()
-                plt.scatter(val1, val2, c=color_col, cmap='magma')
+                plt.scatter(val1, val2, c=color_col, cmap="magma")
 
                 # Cria a chave segura combinada para o nome do arquivo
                 combined_safe_key = combinar_strings((col1_safe, col2_safe))
 
                 # Labels dos eixos (ex: $I(X,h_1)$)
-                col_x_label_latex = f'${safe_to_latex(col1_safe)}$'
-                col_y_label_latex = f'${safe_to_latex(col2_safe)}$'
+                col_x_label_latex = f"${safe_to_latex(col1_safe)}$"
+                col_y_label_latex = f"${safe_to_latex(col2_safe)}$"
 
                 # Nome do arquivo (usa a chave segura combinada)
                 fechar_plot(
                     self.directory,
-                    f'{prefix}_{combined_safe_key}',
+                    f"{prefix}_{combined_safe_key}",
                     col_x_label_latex,
                     col_y_label_latex,
-                    ax
-                    )
-
+                    ax,
+                )
 
         # 5. Colorbar (inalterado, apenas garantindo que o `size` esteja correto)
-        fig, ax = plt.subplots(figsize=(12,1.75))
+        fig, ax = plt.subplots(figsize=(12, 1.75))
         norm = Normalize(vmin=0, vmax=size)
-        cmap = plt.get_cmap('magma')
+        cmap = plt.get_cmap("magma")
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
 
-        cbar = fig.colorbar(sm, cax=ax, orientation='horizontal')
-        cbar.set_label('Épocas')
-        fechar_plot(self.directory, 'colorbar', ax=ax)
+        cbar = fig.colorbar(sm, cax=ax, orientation="horizontal")
+        cbar.set_label("Épocas")
+        fechar_plot(self.directory, "colorbar", ax=ax)
 
     def treinamento(self):
         for seed in self.seeds:
             self.model.set_random_seed(seed)
-            self.model.learn(total_timesteps= self.timesteps, progress_bar= False)
+            self.model.learn(total_timesteps=self.timesteps, progress_bar=True)
 
         # recompensa
         df = pd.DataFrame(self.model.rewards_list)
-        rewards_directory = os.path.join(self.directory, 'rewards.csv')
-        df.to_csv(rewards_directory, mode= 'w', index=False, header= True)
+        rewards_directory = os.path.join(self.directory, "rewards.csv")
+        df.to_csv(rewards_directory, mode="w", index=False, header=True)
 
-        self.model.save(os.path.join(self.directory, 'agente_treinado'))
+        self.model.save(os.path.join(self.directory, "agente_treinado"))
 
         params = {
             chave: valor
             for chave, valor in self.__dict__.items()
-            if chave not in ['train_env', 'model', '_hyperparams']
+            if chave not in ["train_env", "model", "_hyperparams"]
         }
-        json_string = json.dumps(params, indent= 4)
-        json_path = os.path.join(self.directory, f'{self.env_id}-{self.timesteps}.json')
-        with open(json_path, 'w') as arquivo:
+        json_string = json.dumps(params, indent=4)
+        json_path = os.path.join(self.directory, f"{self.env_id}-{self.timesteps}.json")
+        with open(json_path, "w") as arquivo:
             arquivo.write(json_string)
 
         self.plots()
@@ -433,8 +435,9 @@ class Experimento():
     def cleanup(self):
         """Cleanup completo de todos os recursos"""
         import gc
+
         # 1. Fecha e limpa o ambiente
-        if hasattr(self, 'train_env') and self.train_env is not None:
+        if hasattr(self, "train_env") and self.train_env is not None:
             try:
                 self.train_env.close()
             except Exception:
@@ -442,27 +445,27 @@ class Experimento():
             del self.train_env
 
         # 2. Limpa o modelo principal
-        if hasattr(self, 'model') and self.model is not None:
+        if hasattr(self, "model") and self.model is not None:
             # Limpa componentes internos do modelo
-            if hasattr(self.model, 'rollout_buffer'):
+            if hasattr(self.model, "rollout_buffer"):
                 del self.model.rollout_buffer
-            if hasattr(self.model, 'env'):
+            if hasattr(self.model, "env"):
                 try:
-                    self.model.env.close() #type: ignore
+                    self.model.env.close()  # type: ignore
                 except Exception:
                     pass
-            if hasattr(self.model, 'policy'):
+            if hasattr(self.model, "policy"):
                 del self.model.policy
-            if hasattr(self.model, '_last_obs'):
+            if hasattr(self.model, "_last_obs"):
                 del self.model._last_obs
 
             del self.model
 
         # 3. Limpa o reference_agent (IMPORTANTE!)
-        if hasattr(self, 'reference_agent') and self.reference_agent is not None:
-            if hasattr(self.reference_agent, 'rollout_buffer'):
+        if hasattr(self, "reference_agent") and self.reference_agent is not None:
+            if hasattr(self.reference_agent, "rollout_buffer"):
                 del self.reference_agent.rollout_buffer
-            if hasattr(self.reference_agent, 'policy'):
+            if hasattr(self.reference_agent, "policy"):
                 del self.reference_agent.policy
             del self.reference_agent
 

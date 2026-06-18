@@ -10,13 +10,13 @@ class ActivationFetcher:
 
         networks = {
             "actor": self.model.policy.mlp_extractor.policy_net,
-            "critic": self.model.policy.mlp_extractor.value_net
+            "critic": self.model.policy.mlp_extractor.value_net,
         }
 
         # Limpeza preventiva em baixo nível no PyTorch antes do re-atracamento
         for net in networks.values():
             for module in net:
-                if hasattr(module, '_forward_hooks'):
+                if hasattr(module, "_forward_hooks"):
                     module._forward_hooks.clear()
 
         for net_name, net in networks.items():
@@ -31,6 +31,7 @@ class ActivationFetcher:
     def get_hook(self, name):
         def hook(module, input, output):
             self.activations[name] = output.detach().cpu().numpy()
+
         return hook
 
     def clear(self):
@@ -46,5 +47,3 @@ class ActivationFetcher:
                 pass
         self.handles.clear()
         self.activations.clear()
-
-

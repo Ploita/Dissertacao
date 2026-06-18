@@ -1,18 +1,14 @@
-import itertools
-import os
 from typing import Optional
 
 import gymnasium
-import numpy as np
-import pandas as pd
 import torch
 from gymnasium import spaces
+from src.class_fetcher import ActivationFetcher
+from src.class_mutual_info import MutualInfoCalculator
+from src.class_parameter_tracker import ParameterTracker
 from stable_baselines3 import PPO
 from stable_baselines3.common.utils import explained_variance
 from torch.nn import functional as F
-
-from class_fetcher import ActivationFetcher
-from class_mutual_info import MutualInfoCalculator
 
 
 class CustomPPO(PPO):
@@ -26,13 +22,8 @@ class CustomPPO(PPO):
         hparams: dict,
     ):
         super().__init__(policy, env, **hparams)
-        self.directory = os.path.join(directory, "resultados.csv")
-        self.reference_agent = None
-        self.reference_control = None
         self.rewards_list = []
-        
-        # Buffer em memória para evitar escrita constante em disco
-        self.eval_logs = []
+        self.reference_agent = None
 
         if ref_agent is not None:
             temp_agent = PPO("MlpPolicy", env)
@@ -44,8 +35,10 @@ class CustomPPO(PPO):
             layer_size = len(self.policy_kwargs["net_arch"])
             has_ref = self.reference_agent is not None
             self.mi_calculator = MutualInfoCalculator(self, layer_size, has_ref)
+            self.tracker = ParameterTracker(self, directory)
         else:
             self.mi_calculator = None
+            self.tracker = None
 
     def train(self):
         self.policy.set_training_mode(True)
@@ -54,43 +47,20 @@ class CustomPPO(PPO):
 
         self._update_learning_rate(self.policy.optimizer)
         clip_range = self.clip_range(self._current_progress_remaining)
+
+        clip_range_vf = None
         if self.clip_range_vf is not None:
             clip_range_vf = self.clip_range_vf(self._current_progress_remaining)
 
-        entropy_losses = []
-        pg_losses, value_losses = [], []
+        entropy_losses, pg_losses, value_losses = [], [], []
         clip_fractions = []
         continue_training = True
 
-        actor_net = list(itertools.chain(
-            self.policy.mlp_extractor.policy_net.named_parameters(),
-            self.policy.action_net.named_parameters()
-        ))
-        critic_net = list(itertools.chain(
-            self.policy.mlp_extractor.value_net.named_parameters(),
-            self.policy.value_net.named_parameters()
-        ))
-
         for epoch in range(self.n_epochs):
             mi_keys = self.mi_calculator.mapping.keys() if self.mi_calculator else {}
-            metrics = {
-                "actor": {
-                    "mutual_info": {k: [] for k in mi_keys},
-                    "gradient": {k: [] for k, _ in actor_net},
-                    "weights": {k: [v.norm().item()] for k, v in actor_net},
-                    "grad_mean": {k: [] for k, _ in actor_net},
-                    "grad_std": {k: [] for k, _ in actor_net},
-                },
-                "critic": {
-                    "mutual_info": {k: [] for k in mi_keys},
-                    "gradient": {k: [] for k, _ in critic_net},
-                    "weights": {k: [v.norm().item()] for k, v in critic_net},
-                    "grad_mean": {k: [] for k, _ in critic_net},
-                    "grad_std": {k: [] for k, _ in critic_net},
-                },
-            }
-
+            metrics = self.tracker.create_empty_metrics(mi_keys) if self.tracker else {}
             approx_kl_divs = []
+
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
                 if isinstance(self.action_space, spaces.Discrete):
@@ -100,9 +70,8 @@ class CustomPPO(PPO):
                     self.policy.reset_noise(self.batch_size)
 
                 values, log_prob, entropy = self.policy.evaluate_actions(
-                    rollout_data.observations,
-                    actions
-                    )
+                    rollout_data.observations, actions
+                )
                 values = values.flatten()
 
                 advantages = rollout_data.advantages
@@ -122,18 +91,13 @@ class CustomPPO(PPO):
                     values_pred = values
                 else:
                     values_pred = rollout_data.old_values + torch.clamp(
-                        values - rollout_data.old_values,
-                        -clip_range_vf,
-                        clip_range_vf
+                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf
                     )
 
                 value_loss = F.mse_loss(rollout_data.returns, values_pred)
                 value_losses.append(value_loss.item())
 
-                if entropy is None:
-                    entropy_loss = -torch.mean(-log_prob)
-                else:
-                    entropy_loss = -torch.mean(entropy)
+                entropy_loss = -torch.mean(-log_prob) if entropy is None else -torch.mean(entropy)
                 entropy_losses.append(entropy_loss.item())
 
                 loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
@@ -154,91 +118,40 @@ class CustomPPO(PPO):
 
                 if self.fetcher is not None and self.mi_calculator is not None:
                     self.mi_calculator.compute(metrics, self.fetcher, rollout_data.observations)
-
-                    for key, value in actor_net:
-                        metrics["actor"]["weights"][key].append(value.norm().item())
-                        metrics["actor"]["gradient"][key].append(
-                            value.grad.norm().item() if value.grad is not None else 0.0
-                        )
-
-                    for key, value in critic_net:
-                        metrics["critic"]["weights"][key].append(value.norm().item())
-                        metrics["critic"]["gradient"][key].append(
-                            value.grad.norm().item() if value.grad is not None else 0.0
-                        )
-
+                    self.tracker.capture_norms(metrics)
                     self.fetcher.clear()
 
-            if self.fetcher is not None and self.mi_calculator is not None:
-                with torch.no_grad():
-                    for key_safe, values1 in metrics["actor"]["mutual_info"].items():
-                        self.logger.record(f"actor_{key_safe}", np.mean(values1))
-
-                    for key_safe, values2 in metrics["critic"]["mutual_info"].items():
-                        self.logger.record(f"critic_{key_safe}", np.mean(values2))
-
-                    self.logger.record("entropy_loss", np.mean(entropy_losses))
-                    self.logger.record("policy_gradient_loss", np.mean(pg_losses))
-                    self.logger.record("value_loss", np.mean(value_losses))
-                    self.logger.record("approx_kl", np.mean(approx_kl_divs))
-                    self.logger.record("clip_fraction", np.mean(clip_fractions))
-                    self.logger.record("loss", loss.item())
-                    
-                    for key in metrics["actor"]["gradient"].keys():
-                        self.logger.record(
-                            f"actor_weight_layer_{key}",
-                            np.mean(metrics['actor']['weights'][key])
-                        )
-                        self.logger.record(
-                            f"actor_grad_layer_{key}",
-                            np.mean(metrics['actor']['gradient'][key])
-                        )
-
-                    for key in metrics["critic"]["gradient"].keys():
-                        self.logger.record(
-                            f"critic_weight_layer_{key}",
-                            np.mean(metrics['critic']['weights'][key])
-                        )
-                        self.logger.record(
-                            f"critic_grad_layer_{key}",
-                            np.mean(metrics['critic']['gradient'][key])
-                        )
-
-                    if hasattr(self.policy, "log_std"):
-                        self.logger.record(
-                            "policy_log_std",
-                            torch.exp(self.policy.log_std).mean().item()
-                        )
-
-                    if self.clip_range_vf is not None:
-                        self.logger.record("clip_range_vf", clip_range_vf)
-
-                # EM MEMÓRIA: Copia o estado do dicionário para a nossa lista interna
-                self.eval_logs.append(self.logger.name_to_value.copy())
+            # Consolidação das perdas enviada diretamente ao tracker
+            if self.tracker:
+                self.tracker.collect_epoch_metrics(
+                    metrics,
+                    epoch_losses={
+                        "entropy_loss": entropy_losses,
+                        "policy_gradient_loss": pg_losses,
+                        "value_loss": value_losses,
+                        "approx_kl": approx_kl_divs,
+                        "clip_fraction": clip_fractions,
+                        "loss": [loss.item()],
+                        "clip_range_vf_val": clip_range_vf,
+                    },
+                )
 
             self._n_updates += 1
             if not continue_training:
                 break
 
-        reward = self.env.envs[0].get_episode_rewards()
-        self.rewards_list.append(reward)
+        # Bloco final pós-épocas
+        self.rewards_list.append(self.env.envs[0].get_episode_rewards())
         self.env.envs[0].episode_returns = []
 
         explained_var = explained_variance(
             self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
         )
+        print(self.rollout_buffer.returns.flatten())
         self.logger.record("explained_variance", explained_var)
 
-        # DESCARGA DO LOG: Fora do loop de épocas, salvamos tudo de uma vez no CSV
-        if self.eval_logs:
-            df = pd.DataFrame(self.eval_logs)
-            df.to_csv(
-                self.directory,
-                mode="a" if os.path.exists(self.directory) else "w",
-                index=False,
-                header=not os.path.exists(self.directory),
-            )
-            self.eval_logs.clear()  # Limpa o buffer para o próximo ciclo de rollouts
+        if self.tracker:
+            self.tracker.flush_logs_to_disk()
 
         if self.fetcher is not None:
             self.fetcher.remove()

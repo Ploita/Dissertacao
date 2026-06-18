@@ -8,6 +8,7 @@ import pandas as pd
 
 plt.style.use("src/style.mplstyle")
 
+
 def apply_latex_legend(col_name, type):
 
     latex_label = f"\\text{{{col_name}}}"
@@ -488,17 +489,22 @@ def main_pipeline(root_directory):
             print(f"Ocorreu um erro ao gerar plots de IM: {e}")
 
     try:
-        folder_names = [d for d in os.listdir(root_directory)
-                        if os.path.isdir(os.path.join(root_directory, d))]
+        folder_names = [
+            d for d in os.listdir(root_directory) if os.path.isdir(os.path.join(root_directory, d))
+        ]
         if folder_names:
             grouped_rewards = load_rewards_from_folders(root_directory, folder_names)
             if grouped_rewards is not None:
                 plot_reward_mean_std(grouped_rewards, output_dir)
         else:
-            print(f"\nAviso: Nenhuma subpasta de experimento encontrada em {root_directory}."
-                  f"Pulando plotagem de Recompensa.")
+            print(
+                f"\nAviso: Nenhuma subpasta de experimento encontrada em {root_directory}."
+                f"Pulando plotagem de Recompensa."
+            )
     except FileNotFoundError:
-        print(f"\nAviso: Diretório de recompensas {root_directory} não encontrado."
-              f"Pulando plotagem de Recompensa.")
+        print(
+            f"\nAviso: Diretório de recompensas {root_directory} não encontrado."
+            f"Pulando plotagem de Recompensa."
+        )
     except Exception as e:
         print(f"\nOcorreu um erro ao processar plots de Recompensa: {e}")
