@@ -147,7 +147,6 @@ class CustomPPO(PPO):
         explained_var = explained_variance(
             self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
         )
-        print(self.rollout_buffer.returns.flatten())
         self.logger.record("explained_variance", explained_var)
 
         if self.tracker:

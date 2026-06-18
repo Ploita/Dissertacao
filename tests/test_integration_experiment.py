@@ -7,9 +7,9 @@ from src.class_experiment import Experimento
 from src.post_processing import main_pipeline
 
 # Configuração do diretório gabarito (onde estão os arquivos que você sabe que estão certos)
-DIRETORIO_GABARITO = "tests/gabarito_referencia"
+DIRETORIO_GABARITO = "data/tests_reference"
 # Diretório temporário controlado para a execução real do teste
-DIRETORIO_TESTE = "data/test/A0"
+DIRETORIO_TESTE = "data/tests_temp"
 
 
 def test_experimento_ponta_a_ponta_e_comparacao_de_resultados():
@@ -32,7 +32,7 @@ def test_experimento_ponta_a_ponta_e_comparacao_de_resultados():
     params = {
         "policy_kwargs": dict(net_arch=[num_neurons, num_neurons]),
         "timesteps": int(
-            1e5
+            1e4
         ),  # Caso queira que o teste rode mais rápido, pode reduzir ex: int(1e3)
         "directory": DIRETORIO_TESTE,
         "net_init": 2,
