@@ -14,7 +14,7 @@ from stable_baselines3.common.monitor import Monitor
 plt.style.use("src/style.mplstyle")
 
 
-def criar_pasta(directory: str) -> str:
+def create_dir(directory: str) -> str:
     """
     Cria uma nova pasta numerada sequencialmente no diretório dado.
     """
@@ -39,7 +39,7 @@ def criar_pasta(directory: str) -> str:
     return new_directory
 
 
-def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
+def combinations_generator(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     """
     Gera combinações sequenciais de MI (ex: I_A_B e I_B_C).
 
@@ -76,7 +76,7 @@ def gera_combinacoes(colunas_mi_seguras: list) -> list[tuple[str, str]]:
     return combinacoes_sequenciais
 
 
-def combinar_strings(tupla_de_chaves_seguras: tuple[str, str]) -> str:
+def combine_string(tupla_de_chaves_seguras: tuple[str, str]) -> str:
     """
     Combina duas chaves seguras do tipo I_A_B e I_B_C em uma chave de plot I_A_B_C.
     Ex: ('I_X_h1', 'I_h1_h2') -> 'I_X_h1_h2' (chave segura para nome de arquivo)
@@ -149,12 +149,11 @@ def safe_to_latex(safe_key: str) -> str:
     return f"I({key})"
 
 
-def fechar_plot(directory, plot_name, axle_x="Época", axle_y="Valor", ax=None):
+def close_plot(directory, plot_name, axle_x="Época", axle_y="Valor", ax=None):
     """Salva plot com zero vazamento de memória."""
     if ax is None:
         ax = plt.gca()
 
-    # Configurações
     ax.set_xlabel(axle_x)
     ax.set_ylabel(axle_y)
     handles, labels = ax.get_legend_handles_labels()
@@ -162,28 +161,22 @@ def fechar_plot(directory, plot_name, axle_x="Época", axle_y="Valor", ax=None):
         ax.legend()
 
     fig = ax.get_figure()
-
-    # Layout SEM bbox_inches='tight' (que causa vazamentos)
     fig.subplots_adjust(left=0.15, right=0.95, top=0.9, bottom=0.15)  # type: ignore
 
-    # Salva com configuração mínima
     fig.savefig(  # type: ignore
         f"{directory}/plots/{plot_name}.pdf",
         dpi=75,  # DPI menor = menos memória
         format="pdf",
         facecolor="white",
-        # SEM bbox_inches='tight' - causa vazamentos!
     )
 
     plt.close("all")
     plt.clf()
     plt.cla()
 
-    # from matplotlib import _pylab_helpers
-    # _pylab_helpers.Gcf.destroy_all()
 
 
-class Experimento:
+class Experiment:
     def __init__(self, params) -> None:
         # Setagem
         self.env_id = "CartPole-v1"
@@ -229,7 +222,7 @@ class Experimento:
             setattr(self, chave, valor)
 
         # criar uma pasta com número maior sem perder a ordenação
-        self.directory = criar_pasta(self.directory)
+        self.directory = create_dir(self.directory)
 
         self._hyperparams = {
             "learning_rate": self.learning_rate,
@@ -279,7 +272,7 @@ class Experimento:
         # 1. Plots de Loss (inalterado)
         loss_data = data.filter(like="loss")
         ax = loss_data.plot()
-        fechar_plot(self.directory, "loss", axle_x="Época", axle_y="Loss", ax=ax)
+        close_plot(self.directory, "loss", axle_x="Época", axle_y="Loss", ax=ax)
 
         # 2. Plots de Recompensa (inalterado)
         data_to_plot = pd.read_csv(f"{self.directory}/rewards.csv")
@@ -296,7 +289,7 @@ class Experimento:
             color="blue",
             label="$\\pm 1$ Desvio Padrão",
         )
-        fechar_plot(self.directory, "reward", "Iteração", "Recompensa", ax)
+        close_plot(self.directory, "reward", "Iteração", "Recompensa", ax)
 
         # 3. Plots de Pesos e Gradientes (COM REGEX REFORÇADO)
 
@@ -327,32 +320,32 @@ class Experimento:
         actor_weight_data = data.filter(regex=r"^actor" + weight_regex_suffix)
         actor_weight_data = apply_latex_legend(actor_weight_data, "weight")
         ax = actor_weight_data.plot()
-        fechar_plot(self.directory, "actor_weight", axle_y="Magnitude dos Pesos", ax=ax)
+        close_plot(self.directory, "actor_weight", axle_y="Magnitude dos Pesos", ax=ax)
 
         # Ator - Gradientes
         actor_grad_data = data.filter(regex=r"^actor" + grad_regex_suffix)
         actor_grad_data = apply_latex_legend(actor_grad_data, "grad")
         ax = actor_grad_data.plot()
-        fechar_plot(self.directory, "actor_grad", axle_y="Magnitude dos Gradientes", ax=ax)
+        close_plot(self.directory, "actor_grad", axle_y="Magnitude dos Gradientes", ax=ax)
 
         # Crítico - Pesos
         critic_weight_data = data.filter(regex=r"^critic" + weight_regex_suffix)
         critic_weight_data = apply_latex_legend(critic_weight_data, "weight")
         ax = critic_weight_data.plot()
-        fechar_plot(self.directory, "critic_weight", axle_y="Magnitude dos Pesos", ax=ax)
+        close_plot(self.directory, "critic_weight", axle_y="Magnitude dos Pesos", ax=ax)
 
         # Crítico - Gradientes
         critic_grad_data = data.filter(regex=r"^critic" + grad_regex_suffix)
         critic_grad_data = apply_latex_legend(critic_grad_data, "grad")
         ax = critic_grad_data.plot()
-        fechar_plot(self.directory, "critic_grad", axle_y="Magnitude dos Gradientes", ax=ax)
+        close_plot(self.directory, "critic_grad", axle_y="Magnitude dos Gradientes", ax=ax)
 
         # 4. Plots de Informação Mútua (MI) - Inalterado, já usa LaTeX
 
         # Filtrar apenas as colunas de MI do Ator. O regex agora busca o novo padrão: I_any
         actor_mi_cols = data.filter(regex=r"^actor_I_.+").columns.tolist()
         # Gera combinações usando as chaves seguras (ex: I_X_h1, I_h1_h2)
-        combinacoes_sequenciais_seguras = gera_combinacoes(colunas_mi_seguras=actor_mi_cols)
+        combinacoes_sequenciais_seguras = combinations_generator(colunas_mi_seguras=actor_mi_cols)
 
         # Definir a coluna de cor baseada no índice
         size = data.shape[0]
@@ -379,14 +372,14 @@ class Experimento:
                 plt.scatter(val1, val2, c=color_col, cmap="magma")
 
                 # Cria a chave segura combinada para o nome do arquivo
-                combined_safe_key = combinar_strings((col1_safe, col2_safe))
+                combined_safe_key = combine_string((col1_safe, col2_safe))
 
                 # Labels dos eixos (ex: $I(X,h_1)$)
                 col_x_label_latex = f"${safe_to_latex(col1_safe)}$"
                 col_y_label_latex = f"${safe_to_latex(col2_safe)}$"
 
                 # Nome do arquivo (usa a chave segura combinada)
-                fechar_plot(
+                close_plot(
                     self.directory,
                     f"{prefix}_{combined_safe_key}",
                     col_x_label_latex,
@@ -403,7 +396,7 @@ class Experimento:
 
         cbar = fig.colorbar(sm, cax=ax, orientation="horizontal")
         cbar.set_label("Épocas")
-        fechar_plot(self.directory, "colorbar", ax=ax)
+        close_plot(self.directory, "colorbar", ax=ax)
 
     def treinamento(self):
         for seed in self.seeds:

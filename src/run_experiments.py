@@ -1,4 +1,4 @@
-from src.class_experiment import Experimento
+from src.class_experiment import Experiment
 from src.post_processing import main_pipeline
 
 num_neurons = 32
@@ -31,6 +31,6 @@ for environment in environment_list:
             params["env_id"] = environment
             params["net_init"] = init
             ensaio = None  # Inicializa como None
-            ensaio = Experimento(params)
+            ensaio = Experiment(params)
             ensaio.treinamento()
         main_pipeline(params["directory"])
