@@ -12,8 +12,10 @@ class ParameterTracker:
 
     def __init__(self, model, directory: str):
         self.model = model
-        self.directory = os.path.join(directory, "resultados.csv")
+        self.metrics_directory = os.path.join(directory, "resultados.csv")
+        self.rewards_directory = os.path.join(directory, "rewards.csv")
         self.eval_logs = []
+        self.reward_logs = []
 
         # Mapeamento interno das redes
         self.actor_net = list(
@@ -99,14 +101,35 @@ class ParameterTracker:
         # Armazena o snapshot fiel no buffer interno
         self.eval_logs.append(self.model.logger.name_to_value.copy())
 
+    def collect_reward_metrics(self):
+        """Coleta as recompensas de cada episódio individualmente na vertical."""
+        buffer = getattr(self.model, "ep_info_buffer", None)
+
+        if buffer is not None and len(buffer) > 0:
+            for ep_info in buffer:
+                # Damos append direto no float. Cada episódio vira um elemento isolado.
+                self.reward_logs.append(ep_info["r"])
+            buffer.clear()
+
     def flush_logs_to_disk(self):
         """Descarrega o acumulador de memória para o arquivo CSV físico."""
         if self.eval_logs:
             df = pd.DataFrame(self.eval_logs)
             df.to_csv(
-                self.directory,
-                mode="a" if os.path.exists(self.directory) else "w",
+                self.metrics_directory,
+                mode="a" if os.path.exists(self.metrics_directory) else "w",
                 index=False,
-                header=not os.path.exists(self.directory),
+                header=not os.path.exists(self.metrics_directory),
             )
             self.eval_logs.clear()
+
+        if self.reward_logs:
+            # Criamos o DataFrame explicitando que a lista é uma única coluna vertical
+            df_rewards = pd.DataFrame(self.reward_logs, columns=["recompensa_episodio"])
+            df_rewards.to_csv(
+                self.rewards_directory,
+                mode="a" if os.path.exists(self.rewards_directory) else "w",
+                index=False,
+                header=not os.path.exists(self.rewards_directory),
+            )
+            self.reward_logs.clear()  # Limpa a memória para os próximos episódios

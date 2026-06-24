@@ -403,11 +403,6 @@ class Experiment:
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps=self.timesteps, progress_bar=True)
 
-        # recompensa
-        df = pd.DataFrame(self.model.rewards_list)
-        rewards_directory = os.path.join(self.directory, "rewards.csv")
-        df.to_csv(rewards_directory, mode="w", index=False, header=True)
-
         self.model.save(os.path.join(self.directory, "agente_treinado"))
 
         params = {

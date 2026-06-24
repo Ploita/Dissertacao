@@ -247,8 +247,8 @@ def load_rewards_from_folders(root_directory, folder_list, rewards_filename="rew
     return grouped_data
 
 
-def plot_reward_mean_std(grouped_data, directory):
-    """Gera o plot de Recompensa (Média +/- std)."""
+def plot_return_mean_std(grouped_data, directory):
+    """Gera o plot de Retorno (Média +/- std)."""
     if grouped_data is None or grouped_data.empty:
         print("Aviso: Dados de recompensa agrupados estão vazios. Pulando plotagem de Recompensa.")
         return
@@ -258,7 +258,7 @@ def plot_reward_mean_std(grouped_data, directory):
     std = grouped_data["std_reward"]
     timestep = grouped_data["timestep"]
 
-    plt.plot(timestep, mean, label="Média de Recompensa", color="blue")
+    plt.plot(timestep, mean, label="Média de Retorno", color="blue")
 
     plt.fill_between(
         timestep,
@@ -268,7 +268,7 @@ def plot_reward_mean_std(grouped_data, directory):
         color="blue",
     )
 
-    fechar_plot(directory, "reward", "Iteração", "Recompensa Média")
+    fechar_plot(directory, "reward", "Episódio", "Retorno Médio")
 
 
 def plot_rl_metrics(data_grouped, directory):
@@ -495,7 +495,7 @@ def main_pipeline(root_directory):
         if folder_names:
             grouped_rewards = load_rewards_from_folders(root_directory, folder_names)
             if grouped_rewards is not None:
-                plot_reward_mean_std(grouped_rewards, output_dir)
+                plot_return_mean_std(grouped_rewards, output_dir)
         else:
             print(
                 f"\nAviso: Nenhuma subpasta de experimento encontrada em {root_directory}."

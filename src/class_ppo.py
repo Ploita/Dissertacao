@@ -140,16 +140,13 @@ class CustomPPO(PPO):
             if not continue_training:
                 break
 
-        # Bloco final pós-épocas
-        self.rewards_list.append(self.env.envs[0].get_episode_rewards())
-        self.env.envs[0].episode_returns = []
-
         explained_var = explained_variance(
             self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
         )
         self.logger.record("explained_variance", explained_var)
 
         if self.tracker:
+            self.tracker.collect_reward_metrics()
             self.tracker.flush_logs_to_disk()
 
         if self.fetcher is not None:
