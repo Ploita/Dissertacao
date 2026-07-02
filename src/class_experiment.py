@@ -2,14 +2,14 @@ import json
 import os
 import re
 
-import gymnasium
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 from matplotlib.colors import Normalize
 from src.class_ppo import CustomPPO
-from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import VecMonitor
 
 plt.style.use("src/style.mplstyle")
 
@@ -175,7 +175,6 @@ def close_plot(directory, plot_name, axle_x="Época", axle_y="Valor", ax=None):
     plt.cla()
 
 
-
 class Experiment:
     def __init__(self, params) -> None:
         # Setagem
@@ -249,7 +248,8 @@ class Experiment:
             "device": self.device,
         }
 
-        self.train_env = Monitor(gymnasium.make(self.env_id))
+        base_envs = make_vec_env(self.env_id, n_envs=self.n_envs)
+        self.train_env = VecMonitor(base_envs)
 
         # * Reprodutibilidade
         torch.manual_seed(self.net_init)
@@ -276,11 +276,15 @@ class Experiment:
 
         # 2. Plots de Recompensa (inalterado)
         data_to_plot = pd.read_csv(f"{self.directory}/rewards.csv")
-        rewards = data_to_plot.T
-        means = rewards.apply(np.mean)
-        stds = rewards.apply(np.std)
+        col_name = data_to_plot.columns[0]
+        returns = data_to_plot[col_name]
+        # Aplica uma média móvel para suavizar o ruído visual das 4 CPUs
+        janela = min(20, len(returns))
+        means = returns.rolling(window=janela, min_periods=1).mean()
+        stds = returns.rolling(window=janela, min_periods=1).std().fillna(0)
+
         _, ax = plt.subplots()
-        plt.plot(means, label="Média", color="blue")
+        plt.plot(means, label=f"Média Móvel (Janela {janela})", color="blue")
         plt.fill_between(
             range(len(means)),
             np.array(means) - np.array(stds),
@@ -289,7 +293,7 @@ class Experiment:
             color="blue",
             label="$\\pm 1$ Desvio Padrão",
         )
-        close_plot(self.directory, "reward", "Iteração", "Recompensa", ax)
+        close_plot(self.directory, "reward", "Episódio", "Retorno", ax)
 
         # 3. Plots de Pesos e Gradientes (COM REGEX REFORÇADO)
 
@@ -402,7 +406,6 @@ class Experiment:
         for seed in self.seeds:
             self.model.set_random_seed(seed)
             self.model.learn(total_timesteps=self.timesteps, progress_bar=True)
-
         self.model.save(os.path.join(self.directory, "agente_treinado"))
 
         params = {

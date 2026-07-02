@@ -8,19 +8,19 @@ params = {
     "timesteps": int(1e4),
     "directory": f"data/groups/{env_id}_{num_neurons}",
     "net_init": 2,
+    "n_envs": 1,
 }
 
 environment_list = [
     # 'Acrobot-v1',
     "BipedalWalker-v3",
     # 'CarRacing-v3',
-    # 'CartPole-v1',
+    # "CartPole-v1",
     # 'MountainCar-v0',
     # 'Pendulum-v1',
     # 'MountainCarContinuous-v0',
     # 'LunarLander-v3'
 ]
-
 
 for environment in environment_list:
     for init in range(2):

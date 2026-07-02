@@ -36,11 +36,11 @@ Configurações para fazer essa bagaça rodar
 
 # To-do list
 
-- [ ] Melhora da legibilidade
+- [x] Melhora da legibilidade
 - [x] Coleta da IM das camadas do crítico
 - [ ] Adicionar um marcador de convergência (adicionar uma métrica no estilo 5% da amplitude total?)
 - [ ] Gravar o treinamento
-- [ ] Implementação da paralelização (o esquema de `n_envs` não tá funcionando)
+- [x] Implementação da paralelização (o esquema de `n_envs` não tá funcionando)
 - [X] Verificar alternativas para inicialização da rede. Atualmente cada `enviroment` gera uma única rede independente da `seed` do ambiente. Bom para reprodução, mas pode ser um problema sobre a generalização
 - [ ] Ajustar atualização e registro dos modelos. Usar a classe `PPO_tunado` acabou sobrescrevendo a opção de atualização de pesos do próprio modelo. Problema bônus, ao resolver isso verificar se essa ideia de usar múltiplas seeds em uma única inicialização (`np.arange(0,100)`) não vai ficar contaminada pela run anterior
 - [ ] Verificar se o `device` pode acelerar o treinamento

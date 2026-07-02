@@ -40,6 +40,14 @@ class CustomPPO(PPO):
             self.mi_calculator = None
             self.tracker = None
 
+    def _excluded_save_params(self):
+        return super()._excluded_save_params() + [
+            "fetcher",
+            "mi_calculator",
+            "tracker",
+            "reference_agent",
+        ]
+
     def train(self):
         self.policy.set_training_mode(True)
         if self.fetcher is not None:
