@@ -1,0 +1,18 @@
+services:
+  experimento:
+    build: .
+    container_name: dissertacao_treino
+    # Resolve a preocupação C: Dá acesso a memória compartilhada para o Multi-Env
+    shm_size: '2gb' 
+    volumes:
+      # Resolve a preocupação A: Salva os resultados direto na sua máquina física
+      # Altere "src/resultados" para a pasta onde seu código cospe os gráficos/modelos
+      - ./data:/app/data
+    # Resolve a preocupação B: Descomente as linhas abaixo se for usar GPU NVIDIA
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
