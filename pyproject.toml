@@ -29,6 +29,9 @@ dependencies = [
 npeet = { git = "https://github.com/gregversteeg/NPEET" }
 
 [tool.ruff]
+exclude = [
+    "notebooks",
+]
 src = ["src", "tests"]
 line-length = 100
 
