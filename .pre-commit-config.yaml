@@ -1,0 +1,20 @@
+repos:
+  # Repositório Oficial do Ruff para Linter e Formatação
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.0  # Versão estável do Ruff
+    hooks:
+      - id: ruff
+        name: Executar Ruff (Linter)
+        args: [ --fix ]
+      - id: ruff-format
+        name: Executar Ruff (Formatador)
+
+  # Seu hook customizado para rodar os testes dentro do Docker
+  - repo: local
+    hooks:
+      - id: docker-tests
+        name: Executar Testes no Docker (Pytest)
+        entry: docker compose run --rm experimento pytest -q --disable-warnings
+        language: system
+        always_run: true
+        pass_filenames: false

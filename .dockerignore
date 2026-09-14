@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.zip
+*.mp4
+# Adicione abaixo o nome da pasta onde seus treinos antigos ficam salvos
+data/
